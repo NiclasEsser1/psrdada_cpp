@@ -89,3 +89,4 @@ install(DIRECTORY detail DESTINATION include/psrdada_cpp)
 
 add_subdirectory(meerkat)
 add_subdirectory(effelsberg)
+add_subdirectory(cryopaf)
