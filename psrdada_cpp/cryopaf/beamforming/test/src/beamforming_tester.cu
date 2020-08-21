@@ -88,10 +88,9 @@ void BeamformerTester::gpu_process(const thrust::device_vector<T>& in,
   thrust::device_vector<U>& out,
   const thrust::device_vector<T>& weights)
 {
-  std::cout << "Forming beams on device..." << std::endl;
-
   CudaBeamformer cu_bf(&_conf);
   cu_bf.process(in, out, weights);
+  CUDA_ERROR_CHECK(cudaDeviceSynchronize());
 }
 template void BeamformerTester::gpu_process<cuComplex, float>
   (const thrust::device_vector<cuComplex>& in, thrust::device_vector<float>& out, const thrust::device_vector<cuComplex>& weights);
@@ -104,9 +103,6 @@ void BeamformerTester::cpu_process(thrust::host_vector<cuComplex>& in,
   thrust::host_vector<float>& out,
   thrust::host_vector<cuComplex>& weights)
 {
-
-  std::cout << "Forming beams on host" << std::endl;
-
   const int pt = _conf.n_pol;
   const int fpt = _conf.n_channel * pt;
   const int afpt = _conf.n_antenna * fpt;
@@ -145,8 +141,6 @@ void BeamformerTester::cpu_process(thrust::host_vector<cuComplex>& in,
   thrust::host_vector<cuComplex>& out,
   thrust::host_vector<cuComplex>& weights)
 {
-
-  std::cout << "Forming beams on host" << std::endl;
   const int pt = _conf.n_pol;
   const int fpt = _conf.n_channel * pt;
   const int afpt = _conf.n_antenna * fpt;
@@ -230,6 +224,7 @@ TEST_P(BeamformerTester, BeamformerWithoutStokesIdetection){
   cpu_process(host_input, host_output, host_weights); // launches cpu beamforming
   gpu_process(dev_input, dev_output, dev_weights);    // launches CUDA kernel
   compare(host_output, dev_output);                   // compare results of both outputs
+  CUDA_ERROR_CHECK(cudaDeviceSynchronize());
 }
 
 
@@ -285,6 +280,7 @@ TEST_P(BeamformerTester, BeamformerWithStokesIdetection){
   cpu_process(host_input, host_output, host_weights); // launches cpu beamforming
   gpu_process(dev_input, dev_output, dev_weights);    // launches CUDA kernel
   compare(host_output, dev_output);                   // compare results of both outputs
+  CUDA_ERROR_CHECK(cudaDeviceSynchronize());
 }
 
 INSTANTIATE_TEST_CASE_P(BeamformerTesterInstantiation, BeamformerTester, ::testing::Values(
@@ -295,13 +291,13 @@ INSTANTIATE_TEST_CASE_P(BeamformerTesterInstantiation, BeamformerTester, ::testi
   bf_config_t{2048, 8, 1, 2, 4, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
   bf_config_t{16, 64, 163, 2, 32, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
   bf_config_t{512, 16, 288, 2, 64, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
-  bf_config_t{1024, 16, 48, 2, 22, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
-  bf_config_t{2048, 15, 17, 1, 33, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
+  bf_config_t{1024, 16, 48, 2, 32, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
+  bf_config_t{2048, 16, 16, 1, 32, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
   bf_config_t{4096, 8, 8, 2, 32, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
   bf_config_t{1024, 1024, 8, 2, 8, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
   bf_config_t{64, 12, 144, 3, 64, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
   bf_config_t{64, 8, 8, 2, 128, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT},
-  bf_config_t{8, 16, 1, 2, 8, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT}
+  bf_config_t{4096, 512, 188, 2, 128, NTHREAD, WARP_SIZE, SIMPLE_BF_TAFPT}
 ));
 
 

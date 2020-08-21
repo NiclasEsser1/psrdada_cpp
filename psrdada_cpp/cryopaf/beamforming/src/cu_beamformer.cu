@@ -9,7 +9,7 @@ namespace beamforming{
 CudaBeamformer::CudaBeamformer(bf_config_t *conf)
 	: _conf(conf)
 {
-	std::cout << "Building instance of CudaBeamformer" << std::endl;
+	// std::cout << "Building instance of CudaBeamformer" << std::endl;
 	init();
 }
 
@@ -17,7 +17,7 @@ CudaBeamformer::CudaBeamformer(bf_config_t *conf)
 
 CudaBeamformer::~CudaBeamformer()
 {
-	std::cout << "Destroying instance of CudaBeamformer" << std::endl;
+	// std::cout << "Destroying instance of CudaBeamformer" << std::endl;
 }
 
 
@@ -28,7 +28,7 @@ void CudaBeamformer::kernel_layout()
 		case SIMPLE_BF_TAFPT:
 			grid_layout.x = (_conf->n_samples < NTHREAD) ? 1 : _conf->n_samples/NTHREAD;
 			grid_layout.y = _conf->n_beam;
-			grid_layout.z = _conf->n_antenna;
+			grid_layout.z = _conf->n_channel;
 			block_layout.x = NTHREAD; //(_conf->n_samples < NTHREAD) ? _conf->n_samples : NTHREAD;
 			break;
 
@@ -74,7 +74,6 @@ void CudaBeamformer::process(const thrust::device_vector<cuComplex>& in,
 		case SIMPLE_BF_TAFPT:
 			// Launch kernel
 			simple_bf_tafpt_stokes_I<<<grid_layout, block_layout>>>(p_in, p_out, p_weights, _conf_device);
-			CUDA_ERROR_CHECK(cudaDeviceSynchronize());
 			break;
 
 		default:
@@ -102,7 +101,6 @@ void CudaBeamformer::process(const thrust::device_vector<cuComplex>& in,
 		case SIMPLE_BF_TAFPT:
 			// Launch kernel
 			simple_bf_tafpt<<<grid_layout, block_layout>>>(p_in, p_out, p_weights, _conf_device);
-			CUDA_ERROR_CHECK(cudaDeviceSynchronize());
 			break;
 
 		default:

@@ -66,7 +66,7 @@ public:
 	* 						weights BAFPT
 	*/
   void compare(thrust::host_vector<float> cpu,
-    thrust::device_vector<float> gpu, float tol=0.00001);
+    thrust::device_vector<float> gpu, float tol=0.0001);
 
 
 
