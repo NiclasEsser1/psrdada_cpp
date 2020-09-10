@@ -20,7 +20,7 @@ namespace cryopaf{
 #define WARP_SIZE 32
 
 // Enumeration for beamformer type
-enum{SIMPLE_BF_TAFPT, SIMPLE_BF_TAFPT_STOKES_I};
+enum{SIMPLE_BF_TAFPT, BF_TFAP};
 
 struct bf_config_t{
    std::size_t n_samples;

@@ -3,14 +3,14 @@
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
+#include <thrust/complex.h>
+#include <cuda_fp16.h>
 #include <random>
 #include <cmath>
-#include <complex>
-#include <cuComplex.h>
 #include <gtest/gtest.h>
 
 #include "psrdada_cpp/cryopaf/beamforming/cu_beamformer.cuh"
-#include "psrdada_cpp/cryopaf/cryopaf_conf.hpp"
+#include "psrdada_cpp/cryopaf/types.cuh"
 
 namespace psrdada_cpp{
 namespace cryopaf{
@@ -23,16 +23,6 @@ public:
   BeamformerTester();
   ~BeamformerTester(){};
 
-  /**
-  * @brief
-  *
-  * @param			in  TAFPT
-  *							out BTF
-  * 						weights BAFPT
-  */
-  void cpu_process(thrust::host_vector<cuComplex>& in,
-    thrust::host_vector<float>& out,
-    thrust::host_vector<cuComplex>& weights);
 
   /**
   * @brief
@@ -41,9 +31,54 @@ public:
   *							out BTF
   * 						weights BAFPT
   */
-  void cpu_process(thrust::host_vector<cuComplex>& in,
-    thrust::host_vector<cuComplex>& out,
-    thrust::host_vector<cuComplex>& weights);
+  template <typename T>
+  void test(T type);
+
+
+
+  /**
+  * @brief
+  *
+  * @param			in  TAFPT
+  *							out BTF
+  * 						weights BAFPT
+  */
+  template <typename T>
+  void cpu_process(
+    thrust::host_vector<thrust::complex<T>>& in,
+    thrust::host_vector<T>& out,
+    thrust::host_vector<thrust::complex<T>>& weights);
+
+
+
+  /**
+  * @brief
+  *
+  * @param			in  TAFPT
+  *							out BTF
+  * 						weights BAFPT
+  */
+  template <typename T>
+  void cpu_process(
+    thrust::host_vector<thrust::complex<T>>& in,
+    thrust::host_vector<thrust::complex<T>>& out,
+    thrust::host_vector<thrust::complex<T>>& weights);
+
+
+
+  /**
+  * @brief
+  *
+  * @param			in  TAFPT
+  *							out BTF
+  * 						weights BAFPT
+  */
+  template<typename T>
+  void gpu_process(
+    thrust::device_vector<thrust::complex<T>>& in,
+    thrust::device_vector<T>& out,
+    thrust::device_vector<thrust::complex<T>>& weights);
+
 
 
   /**
@@ -53,10 +88,13 @@ public:
 	*							out BTF
 	* 						weights BAFPT
 	*/
-  template<typename T, typename U>
-  void gpu_process(const thrust::device_vector<T>& in,
-    thrust::device_vector<U>& out,
-    const thrust::device_vector<T>& weights);
+  template<typename T>
+  void gpu_process(
+    thrust::device_vector<thrust::complex<T>>& in,
+    thrust::device_vector<thrust::complex<T>>& out,
+    thrust::device_vector<thrust::complex<T>>& weights);
+
+
 
   /**
 	* @brief
@@ -65,13 +103,25 @@ public:
 	*							out BTF
 	* 						weights BAFPT
 	*/
-  void compare(thrust::host_vector<float> cpu,
-    thrust::device_vector<float> gpu, float tol=0.0001);
+  template <typename T>
+  void compare(
+    const thrust::host_vector<T> cpu,
+    const thrust::device_vector<T> gpu,
+    const float tol=0.0001);
 
 
 
-  void compare(thrust::host_vector<cuComplex> cpu,
-    thrust::device_vector<cuComplex> gpu);
+  /**
+	* @brief
+	*
+	* @param			in  TAFPT
+	*							out BTF
+	* 						weights BAFPT
+	*/
+  template<typename T>
+  void compare(
+    const thrust::host_vector<thrust::complex<T>>& cpu,
+    const thrust::device_vector<thrust::complex<T>>& gpu);
 
 
 protected:

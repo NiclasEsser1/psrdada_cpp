@@ -10,10 +10,11 @@
 
 #include <thrust/device_vector.h>
 #include <thrust/copy.h>
+#include <thrust/complex.h>
+#include <cuda_fp16.h>
 #include <cuda.h>
-#include <cuComplex.h>
 
-#include "psrdada_cpp/cryopaf/cryopaf_conf.hpp"
+#include "psrdada_cpp/cryopaf/types.cuh"
 #include "psrdada_cpp/cuda_utils.hpp"
 #include "psrdada_cpp/cryopaf/beamforming/cu_kernels.cuh"
 
@@ -21,7 +22,7 @@ namespace psrdada_cpp{
 namespace cryopaf{
 namespace beamforming{
 
-
+template <class T>
 class CudaBeamformer {
 public:
 	/**
@@ -29,7 +30,7 @@ public:
 	*
 	* @param
 	*/
-	CudaBeamformer(bf_config_t *conf);
+	CudaBeamformer(bf_config_t *conf, int device_id = 0);
 	virtual ~CudaBeamformer();
 
 	/**
@@ -48,9 +49,10 @@ public:
 	*							out BTF
 	* 						weights BAFPT
 	*/
-	void process(const thrust::device_vector<cuComplex>& in,
-		thrust::device_vector<float>& out,
-		const thrust::device_vector<cuComplex>& weights,
+	void process(
+		const thrust::device_vector<thrust::complex<T>>& in,
+		thrust::device_vector<T>& out,
+		const thrust::device_vector<thrust::complex<T>>& weights,
 		cudaStream_t stream = NULL);
 
 	/**
@@ -60,9 +62,10 @@ public:
 	*							out BTF
 	* 						weights BAFPT
 	*/
-	void process(const thrust::device_vector<cuComplex>& in,
-		thrust::device_vector<cuComplex>& out,
-		const thrust::device_vector<cuComplex>& weights,
+	void process(
+		const thrust::device_vector<thrust::complex<T>>& in,
+		thrust::device_vector<thrust::complex<T>>& out,
+		const thrust::device_vector<thrust::complex<T>>& weights,
 		cudaStream_t stream = NULL);
 
 private:
@@ -76,15 +79,25 @@ private:
 	void kernel_layout();
 
 private:
+	int id;
+	bool success = true;
+	cudaDeviceProp prop;
 	bf_config_t *_conf;
 	bf_config_t *_conf_device;
 	cudaStream_t _stream;
 	dim3 grid_layout;
 	dim3 block_layout;
+	std::size_t shared_mem_bytes;
 };
+
+
+// template class CudaBeamformer<short>;
+template class CudaBeamformer<float>;
+template class CudaBeamformer<double>;
 
 } // namespace beamforming
 } // namespace cryopaf
 } // namespace psrdada_cpp
 
+#include "psrdada_cpp/cryopaf/beamforming/src/cu_beamformer.cu"
 #endif /* CUDA_BEAMFORMER_CUH_ */
