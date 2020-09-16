@@ -16,7 +16,7 @@ int main(int argc, char** argv)
   // psrdada_cpp::cryopaf::bf_config_t _conf;
   // psrdada_cpp::cryopaf::beamforming::CudaBeamformer bf(&_conf);
   //
-  // 
+  //
   // // Set up normal distributed sample and weight generator
   // const float input_level = 32.0f;
   // const double pi = std::acos(-1);

@@ -62,12 +62,9 @@ int main(int argc, char** argv)
             std::cerr << desc << std::endl;
             return ERROR_IN_COMMAND_LINE;
         }
-        // Load & set configuration from cryopaf_conf.hpp
-
-        psrdada_cpp::cryopaf::beamforming::CudaBeamformer<float> bf(&conf);
 
         // Set up normal distributed sample and weight generator
-        const float input_level = 32.0f;
+        const float input_level = 4.0f;
         const double pi = std::acos(-1);
         std::default_random_engine generator;
         std::normal_distribution<float> normal_dist(0.0, input_level);
@@ -77,42 +74,44 @@ int main(int argc, char** argv)
         std::size_t input_size = conf.n_samples * conf.n_antenna * conf.n_channel * conf.n_pol;
         std::size_t weights_size =  conf.n_beam * conf.n_antenna * conf.n_channel * conf.n_pol;
         std::size_t output_size = conf.n_samples * conf.n_beam * conf.n_channel;
-        std::size_t required_mem = input_size * sizeof(thrust::complex<float>)
-            + weights_size * sizeof(thrust::complex<float>)
-            + output_size * sizeof(thrust::complex<float>) * conf.n_pol
-            + output_size * sizeof(thrust::complex<float>);
+        std::size_t required_mem = input_size * sizeof(float2)
+            + weights_size * sizeof(float2)
+            + output_size * sizeof(float2) * conf.n_pol
+            + output_size * sizeof(float2);
 
         std::cout << "Required device memory: " << std::to_string(required_mem/(1024*1024)) << "MiB" << std::endl;
         std::cout << "Required host memory: " << std::to_string(2*required_mem/(1024*1024)) << "MiB" << std::endl;
 
         // Allocate host vectors
-        thrust::host_vector<thrust::complex<float>> host_input(input_size);
-        thrust::host_vector<thrust::complex<float>> host_weights(weights_size);
-        thrust::host_vector<thrust::complex<float>> host_output(output_size * conf.n_pol);
+        thrust::host_vector<float2> host_input(input_size);
+        thrust::host_vector<float2> host_weights(weights_size);
+        thrust::host_vector<float2> host_output(output_size * conf.n_pol);
         thrust::host_vector<float> host_output_stokesI(output_size);
 
         // Generate test samples / normal distributed noise for input signal
         for (size_t i = 0; i < host_input.size(); i++)
         {
-            host_input[i] = thrust::complex<float>(normal_dist(generator), normal_dist(generator));
+            host_input[i] = {normal_dist(generator), normal_dist(generator)};
         }
         // Build complex weight as C * exp(i * theta).
         for (size_t i = 0; i < host_weights.size(); i++)
         {
-            host_weights[i] = 12.0f * std::exp(std::complex<float>(0.0f, uniform_dist(generator)));
+            host_weights[i] = {normal_dist(generator), normal_dist(generator)};
         }
 
         // Allocate device memory & assign test samples
         // Input and weights are equal for host and device vector
-        thrust::device_vector<thrust::complex<float>> dev_input = host_input;
-        thrust::device_vector<thrust::complex<float>> dev_weights = host_weights;
-        thrust::device_vector<thrust::complex<float>> dev_output(output_size * conf.n_pol);
+        thrust::device_vector<float2> dev_input = host_input;
+        thrust::device_vector<float2> dev_weights = host_weights;
+        thrust::device_vector<float2> dev_output(output_size * conf.n_pol);
 
         // thrust::device_vector<thrust::complex<__half>> dev_input_fp16 = __float2half(host_input);
         // thrust::device_vector<thrust::complex<__half>> dev_weights_fp16 = __float2half(host_weights);
         // thrust::device_vector<thrust::complex<__half>> dev_output_fp16(output_size * conf.n_pol);
 
         thrust::device_vector<float> dev_output_stokesI(output_size);
+
+        psrdada_cpp::cryopaf::beamforming::CudaBeamformer<float2> bf(&conf);
 
         for(int i = 0; i < iter; i++)
         {

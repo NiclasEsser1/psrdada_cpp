@@ -3,10 +3,11 @@
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
-#include <thrust/complex.h>
+#include <cuComplex.h>
 #include <cuda_fp16.h>
 #include <random>
 #include <cmath>
+#include <complex>
 #include <gtest/gtest.h>
 
 #include "psrdada_cpp/cryopaf/beamforming/cu_beamformer.cuh"
@@ -21,7 +22,7 @@ namespace test{
 class BeamformerTester : public ::testing::TestWithParam<bf_config_t> {
 public:
   BeamformerTester();
-  ~BeamformerTester(){};
+  ~BeamformerTester();
 
 
   /**
@@ -31,73 +32,40 @@ public:
   *							out BTF
   * 						weights BAFPT
   */
-  template <typename T>
-  void test(T type);
-
+  template <typename T, typename U>
+  void test();
 
 
   /**
-  * @brief
+  * @brief      POWER BF
   *
   * @param			in  TAFPT
   *							out BTF
   * 						weights BAFPT
   */
-  template <typename T>
+  template<typename T, typename U>
   void cpu_process(
-    thrust::host_vector<thrust::complex<T>>& in,
-    thrust::host_vector<T>& out,
-    thrust::host_vector<thrust::complex<T>>& weights);
-
+    thrust::host_vector<T>& in,
+    thrust::host_vector<U>& out,
+    thrust::host_vector<T>& weights);
 
 
   /**
-  * @brief
+  * @brief      POWER BF
   *
   * @param			in  TAFPT
   *							out BTF
   * 						weights BAFPT
   */
-  template <typename T>
-  void cpu_process(
-    thrust::host_vector<thrust::complex<T>>& in,
-    thrust::host_vector<thrust::complex<T>>& out,
-    thrust::host_vector<thrust::complex<T>>& weights);
-
-
-
-  /**
-  * @brief
-  *
-  * @param			in  TAFPT
-  *							out BTF
-  * 						weights BAFPT
-  */
-  template<typename T>
+  template<typename T, typename U>
   void gpu_process(
-    thrust::device_vector<thrust::complex<T>>& in,
-    thrust::device_vector<T>& out,
-    thrust::device_vector<thrust::complex<T>>& weights);
-
-
-
-  /**
-	* @brief
-	*
-	* @param			in  TAFPT
-	*							out BTF
-	* 						weights BAFPT
-	*/
-  template<typename T>
-  void gpu_process(
-    thrust::device_vector<thrust::complex<T>>& in,
-    thrust::device_vector<thrust::complex<T>>& out,
-    thrust::device_vector<thrust::complex<T>>& weights);
-
+    thrust::device_vector<T>& in,
+    thrust::device_vector<U>& out,
+    thrust::device_vector<T>& weights);
 
 
   /**
-	* @brief
+	* @brief       POWER BF
 	*
 	* @param			in  TAFPT
 	*							out BTF
@@ -107,21 +75,7 @@ public:
   void compare(
     const thrust::host_vector<T> cpu,
     const thrust::device_vector<T> gpu,
-    const float tol=0.0001);
-
-
-
-  /**
-	* @brief
-	*
-	* @param			in  TAFPT
-	*							out BTF
-	* 						weights BAFPT
-	*/
-  template<typename T>
-  void compare(
-    const thrust::host_vector<thrust::complex<T>>& cpu,
-    const thrust::device_vector<thrust::complex<T>>& gpu);
+    const float tol=0.01);
 
 
 protected:

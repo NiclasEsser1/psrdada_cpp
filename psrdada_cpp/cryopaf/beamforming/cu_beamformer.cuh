@@ -10,8 +10,8 @@
 
 #include <thrust/device_vector.h>
 #include <thrust/copy.h>
-#include <thrust/complex.h>
 #include <cuda_fp16.h>
+#include <cuComplex.h>
 #include <cuda.h>
 
 #include "psrdada_cpp/cryopaf/types.cuh"
@@ -49,25 +49,15 @@ public:
 	*							out BTF
 	* 						weights BAFPT
 	*/
+	template<class U>
 	void process(
-		const thrust::device_vector<thrust::complex<T>>& in,
-		thrust::device_vector<T>& out,
-		const thrust::device_vector<thrust::complex<T>>& weights,
+		const thrust::device_vector<T>& in,
+		thrust::device_vector<U>& out,
+		const thrust::device_vector<T>& weights,
 		cudaStream_t stream = NULL);
 
-	/**
-	* @brief
-	*
-	* @param			in  TAFPT
-	*							out BTF
-	* 						weights BAFPT
-	*/
-	void process(
-		const thrust::device_vector<thrust::complex<T>>& in,
-		thrust::device_vector<thrust::complex<T>>& out,
-		const thrust::device_vector<thrust::complex<T>>& weights,
-		cudaStream_t stream = NULL);
 
+	void print_layout();
 private:
 	/**
 	* @brief
@@ -83,7 +73,6 @@ private:
 	bool success = true;
 	cudaDeviceProp prop;
 	bf_config_t *_conf;
-	bf_config_t *_conf_device;
 	cudaStream_t _stream;
 	dim3 grid_layout;
 	dim3 block_layout;
@@ -91,9 +80,10 @@ private:
 };
 
 
-// template class CudaBeamformer<short>;
-template class CudaBeamformer<float>;
-template class CudaBeamformer<double>;
+template class CudaBeamformer<__half2>;
+template class CudaBeamformer<float2>;
+// template class CudaBeamformer<double2>;
+
 
 } // namespace beamforming
 } // namespace cryopaf
