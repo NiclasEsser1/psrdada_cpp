@@ -5,7 +5,8 @@
 #include <random>
 #include <cmath>
 
-#include "psrdada_cpp/cryopaf/beamforming/cu_beamformer.cuh"
+#include "psrdada_cpp/cryopaf/beamforming/PowerBeamformer.cuh"
+#include "psrdada_cpp/cryopaf/beamforming/VoltageBeamformer.cuh"
 #include "psrdada_cpp/cuda_utils.hpp"
 #include "boost/program_options.hpp"
 #include "psrdada_cpp/cryopaf/types.cuh"
@@ -30,6 +31,7 @@ int main(int argc, char** argv)
         // Variables to store command line options
         cryopaf::bf_config_t conf;
         std::size_t iter;
+        int dev_id;
 
         // Parse command line
         namespace po = boost::program_options;
@@ -40,8 +42,10 @@ int main(int argc, char** argv)
         ("channels", po::value<std::size_t>(&conf.n_channel)->default_value(256), "Number of channels")
         ("antennas", po::value<std::size_t>(&conf.n_antenna)->default_value(WARP_SIZE*2), "Number of antennas")
         ("pol", po::value<std::size_t>(&conf.n_pol)->default_value(2), "Polarisation")
-        ("beams", po::value<std::size_t>(&conf.n_beam)->default_value(16), "Number of beams")
+        ("beams", po::value<std::size_t>(&conf.n_beam)->default_value(64), "Number of beams")
+        ("interval", po::value<std::size_t>(&conf.interval)->default_value(8), "Beamform type:")
         ("type", po::value<std::size_t>(&conf.bf_type)->default_value(0), "Beamform type:")
+        ("id", po::value<int>(&dev_id)->default_value(0), "Beamform type:")
         ("iteration", po::value<std::size_t>(&iter)->default_value(1), "Beamform type:");
 
         po::variables_map vm;
@@ -63,8 +67,10 @@ int main(int argc, char** argv)
             return ERROR_IN_COMMAND_LINE;
         }
 
+        CUDA_ERROR_CHECK(cudaSetDevice(dev_id));
+
         // Set up normal distributed sample and weight generator
-        const float input_level = 4.0f;
+        const float input_level = 2.0f;
         const double pi = std::acos(-1);
         std::default_random_engine generator;
         std::normal_distribution<float> normal_dist(0.0, input_level);
@@ -77,7 +83,7 @@ int main(int argc, char** argv)
         std::size_t required_mem = input_size * sizeof(float2)
             + weights_size * sizeof(float2)
             + output_size * sizeof(float2) * conf.n_pol
-            + output_size * sizeof(float2);
+            + output_size * sizeof(float) / conf.interval;
 
         std::cout << "Required device memory: " << std::to_string(required_mem/(1024*1024)) << "MiB" << std::endl;
         std::cout << "Required host memory: " << std::to_string(2*required_mem/(1024*1024)) << "MiB" << std::endl;
@@ -85,39 +91,43 @@ int main(int argc, char** argv)
         // Allocate host vectors
         thrust::host_vector<float2> host_input(input_size);
         thrust::host_vector<float2> host_weights(weights_size);
-        thrust::host_vector<float2> host_output(output_size * conf.n_pol);
-        thrust::host_vector<float> host_output_stokesI(output_size);
+        // thrust::host_vector<float2> host_output(output_size * conf.n_pol);
+        thrust::host_vector<float> host_output_stokesI(output_size / conf.interval);
 
+        std::cout << "Generating test samples... " << std::endl;
         // Generate test samples / normal distributed noise for input signal
         for (size_t i = 0; i < host_input.size(); i++)
         {
-            host_input[i] = {normal_dist(generator), normal_dist(generator)};
+            host_input[i] = {1,1};//{normal_dist(generator), normal_dist(generator)};
         }
         // Build complex weight as C * exp(i * theta).
         for (size_t i = 0; i < host_weights.size(); i++)
         {
-            host_weights[i] = {normal_dist(generator), normal_dist(generator)};
+            host_weights[i] = {1,1};//{normal_dist(generator), normal_dist(generator)};
         }
 
         // Allocate device memory & assign test samples
         // Input and weights are equal for host and device vector
         thrust::device_vector<float2> dev_input = host_input;
-        thrust::device_vector<float2> dev_weights = host_weights;
-        thrust::device_vector<float2> dev_output(output_size * conf.n_pol);
+        thrust::device_vector<float2> dev_weights(1);// = host_weights;
+        // thrust::device_vector<float2> dev_output(output_size * conf.n_pol);
+        thrust::device_vector<float> dev_output_stokesI(output_size / conf.interval);
 
         // thrust::device_vector<thrust::complex<__half>> dev_input_fp16 = __float2half(host_input);
         // thrust::device_vector<thrust::complex<__half>> dev_weights_fp16 = __float2half(host_weights);
         // thrust::device_vector<thrust::complex<__half>> dev_output_fp16(output_size * conf.n_pol);
 
-        thrust::device_vector<float> dev_output_stokesI(output_size);
 
-        psrdada_cpp::cryopaf::beamforming::CudaBeamformer<float2> bf(&conf);
+        // psrdada_cpp::cryopaf::beamforming::VoltageBeamformer<float2> vbf(&conf);
+        psrdada_cpp::cryopaf::beamforming::PowerBeamformer<float2, float> pbf(&conf, dev_id);
+        pbf.upload_weights(host_weights);
 
         for(int i = 0; i < iter; i++)
         {
-            bf.process(dev_input, dev_output, dev_weights);    // launches CUDA kernel
+
+            pbf.process(dev_input, dev_output_stokesI, dev_weights);    // launches CUDA kernel
             CUDA_ERROR_CHECK(cudaDeviceSynchronize());
-            // bf.process(dev_input, dev_output_stokesI, dev_weights);    // launches CUDA kernel
+            // vbf.process(dev_input, dev_output, dev_weights);    // launches CUDA kernel
             // CUDA_ERROR_CHECK(cudaDeviceSynchronize());
         }
     }

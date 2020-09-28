@@ -3,7 +3,8 @@ include_directories(${GTEST_INCLUDE_DIR})
 link_directories(${GTEST_LIBRARY_DIR})
 set(CMAKE_CXX_STANDARD 17)
 set(gtest_beamforming_src
-    src/beamforming_tester.cu
+    src/VoltageBeamformTester.cu
+    src/PowerBeamformTester.cu
     src/gtest_beamforming.cu
 )
 cuda_add_executable(gtest_beamforming ${gtest_beamforming_src} )

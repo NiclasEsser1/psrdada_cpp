@@ -6,7 +6,8 @@
 #include <random>
 #include <cmath>
 
-#include "psrdada_cpp/cryopaf/beamforming/cu_beamformer.cuh"
+#include "psrdada_cpp/cryopaf/beamforming/VoltageBeamformer.cuh"
+#include "psrdada_cpp/cryopaf/beamforming/PowerBeamformer.cuh"
 #include "psrdada_cpp/cryopaf/types.cuh"
 #include "psrdada_cpp/cuda_utils.hpp"
 

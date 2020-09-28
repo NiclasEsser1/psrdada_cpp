@@ -1,5 +1,5 @@
-#ifndef BEAMFORMER_TEST_H_
-#define BEAMFORMER_TEST_H_
+#ifndef VOLTAGEBEAMFORM_TESTER_H_
+#define VOLTAGEBEAMFORM_TESTER_H_
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
@@ -10,7 +10,7 @@
 #include <complex>
 #include <gtest/gtest.h>
 
-#include "psrdada_cpp/cryopaf/beamforming/cu_beamformer.cuh"
+#include "psrdada_cpp/cryopaf/beamforming/VoltageBeamformer.cuh"
 #include "psrdada_cpp/cryopaf/types.cuh"
 
 namespace psrdada_cpp{
@@ -19,10 +19,10 @@ namespace beamforming{
 namespace test{
 
 
-class BeamformerTester : public ::testing::TestWithParam<bf_config_t> {
+class VoltageBeamformTester : public ::testing::TestWithParam<bf_config_t> {
 public:
-  BeamformerTester();
-  ~BeamformerTester();
+  VoltageBeamformTester();
+  ~VoltageBeamformTester();
 
 
   /**
@@ -32,8 +32,8 @@ public:
   *							out BTF
   * 						weights BAFPT
   */
-  template <typename T, typename U>
-  void test();
+  template <typename T>
+  void test(int device_id);
 
 
   /**
@@ -41,12 +41,12 @@ public:
   *
   * @param			in  TAFPT
   *							out BTF
-  * 						weights BAFPT
+  * 						weights BAFP
   */
-  template<typename T, typename U>
+  template<typename T>
   void cpu_process(
     thrust::host_vector<T>& in,
-    thrust::host_vector<U>& out,
+    thrust::host_vector<T>& out,
     thrust::host_vector<T>& weights);
 
 
@@ -57,10 +57,10 @@ public:
   *							out BTF
   * 						weights BAFPT
   */
-  template<typename T, typename U>
+  template<typename T>
   void gpu_process(
     thrust::device_vector<T>& in,
-    thrust::device_vector<U>& out,
+    thrust::device_vector<T>& out,
     thrust::device_vector<T>& weights);
 
 
@@ -83,6 +83,7 @@ protected:
   void TearDown() override;
 
 private:
+  int id;
   bf_config_t _conf;
   cudaStream_t _stream;
 };
@@ -92,5 +93,6 @@ private:
 } // namespace beamforming
 } // namespace test
 
+#include "psrdada_cpp/cryopaf/beamforming/test/src/VoltageBeamformTester.cu"
 
-#endif //BEAMFORMER_TEST_H_
+#endif //VOLTAGEBEAMFORM_TESTER_H_
