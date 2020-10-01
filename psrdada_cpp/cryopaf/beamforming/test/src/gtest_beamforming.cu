@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-// #include "psrdada_cpp/cryopaf/beamforming/test/VoltageBeamformTester.cuh"
+#include "psrdada_cpp/cryopaf/beamforming/test/VoltageBeamformTester.cuh"
 #include "psrdada_cpp/cryopaf/beamforming/test/PowerBeamformTester.cuh"
 
 int main(int argc, char **argv) {

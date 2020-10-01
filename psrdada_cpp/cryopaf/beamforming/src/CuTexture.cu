@@ -23,10 +23,12 @@ CudaTexture<T>::CudaTexture(std::size_t width, std::size_t height, std::size_t d
 	print_layout();
 	memset(&res_desc, 0, sizeof(cudaResourceDesc));
 	memset(&tex_desc, 0, sizeof(cudaTextureDesc));
+
 	if constexpr (std::is_same<T, __half2>::value)
 		chan_desc = cudaCreateChannelDescHalf();
 	else
 		chan_desc = cudaCreateChannelDesc<T>();
+
 	CUDA_ERROR_CHECK(cudaMalloc3DArray(&array, &chan_desc, vol))
 
 }
@@ -63,7 +65,6 @@ void CudaTexture<T>::set(thrust::device_vector<T> vec)
 	copy_params.kind = cudaMemcpyDeviceToDevice;
 
 	CUDA_ERROR_CHECK(cudaMemcpy3D(&copy_params));
-	// printf("%f + i %f\n",(float)array[0][0][0].x, (float)array[0][0][0].y);
 
 	res_desc.resType = cudaResourceTypeArray;
 	res_desc.res.array.array = array;

@@ -36,6 +36,8 @@ include(dependencies)
 # === process through the cheetah tree:
 add_subdirectory(${CMAKE_PROJECT_NAME})
 
+set(CMAKE_CXX_FLAGS "--std=c++17 ${CMAKE_CXX_FLAGS}")
+
 # === Print build options summary.
 set(DEBUG_PRINT ON)
 if (DEBUG_PRINT)

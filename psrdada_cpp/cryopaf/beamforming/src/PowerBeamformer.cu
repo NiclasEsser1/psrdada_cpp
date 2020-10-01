@@ -41,10 +41,11 @@ void PowerBeamformer<T, U>::init(bf_config_t *conf)
 			block_layout.x = NTHREAD; //(_conf->n_samples < NTHREAD) ? _conf->n_samples : NTHREAD;
 			break;
 		case BF_TFAP:
-			shared_mem_bytes = (_conf->n_antenna * _conf->n_pol * sizeof(T))
-				+ (_conf->n_beam * sizeof(U) + WARP_SIZE * WARPS * sizeof(U));
-			std::cout << "Required shared memory: " << std::to_string(shared_mem_bytes) << " Bytes" << std::endl;
-			if(prop.sharedMemPerBlock < shared_mem_bytes + NTHREAD)
+			shared_mem_static = SHARED_IDATA * sizeof(T);
+			shared_mem_dynamic = (_conf->n_beam + NTHREAD) * sizeof(U);
+			shared_mem_total = shared_mem_static + shared_mem_dynamic;
+			std::cout << "Required shared memory: " << std::to_string(shared_mem_total) << " Bytes" << std::endl;
+			if(prop.sharedMemPerBlock < shared_mem_total)
 			{
 				std::cout << "The requested size for shared memory per block exceeds the size provided by device "
 					<< std::to_string(id) << std::endl
@@ -91,7 +92,7 @@ void PowerBeamformer<T, U>::process(
 		case BF_TFAP:
 		{
 			std::cout << "Power beamformer (Stokes I): optimized TFAPT" << std::endl;
-			bf_tafpt_power<<<grid_layout, block_layout, shared_mem_bytes>>>(p_in, p_out, texture->getTexture(), *_conf);
+			bf_tafpt_power<<<grid_layout, block_layout, shared_mem_dynamic>>>(p_in, p_out, texture->getTexture(), *_conf);
 			break;
 		}
 		default:
@@ -104,7 +105,7 @@ void PowerBeamformer<T, U>::process(
 template<class T, class U>
 void PowerBeamformer<T, U>::upload_weights(thrust::device_vector<T> weights)
 {
-	texture = new CudaTexture<T>(_conf->n_beam, _conf->n_channel, _conf->n_antenna * _conf->n_pol, id);
+	texture = new CudaTexture<T>(_conf->n_antenna * _conf->n_pol, _conf->n_channel, _conf->n_beam, id);
 	texture->set(weights);
 }
 
@@ -112,7 +113,7 @@ void PowerBeamformer<T, U>::upload_weights(thrust::device_vector<T> weights)
 template<class T, class U>
 void PowerBeamformer<T, U>::upload_weights(thrust::host_vector<T> weights)
 {
-	texture = new CudaTexture<T>(_conf->n_beam, _conf->n_channel, _conf->n_antenna * _conf->n_pol, id);
+	texture = new CudaTexture<T>(_conf->n_antenna * _conf->n_pol, _conf->n_channel, _conf->n_beam, id);
 	texture->set(weights);
 }
 

@@ -14,6 +14,7 @@ namespace cryopaf{
 #define NTHREAD 1024
 #define WARP_SIZE 32
 #define WARPS NTHREAD/WARP_SIZE
+#define SHARED_IDATA 2048 // bytes
 
 // Enumeration for beamformer type
 enum{SIMPLE_BF_TAFPT, BF_TFAP, CUBLAS_BF_TFAP};

@@ -33,7 +33,7 @@ public:
   * 						weights BAFPT
   */
   template <typename T>
-  void test(int device_id);
+  void test(int device_id=0);
 
 
   /**

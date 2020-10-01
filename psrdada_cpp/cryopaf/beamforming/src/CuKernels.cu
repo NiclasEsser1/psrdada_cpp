@@ -76,72 +76,94 @@ void bf_tafpt_power(const float2 *idata, float *odata, const cudaTextureObject_t
 	int bidy = blockIdx.y;      // Channel dimension (F)
 
 	const int n_elements = conf.n_antenna * conf.n_pol;
-	const int warp_idx = tidx / WARP_SIZE;
-	const int warp = tidx % WARP_SIZE;
+	const int n_timestamp = SHARED_IDATA / n_elements;	// Number of timestamps loaded into shared memory
+	const int n_timestamp_iter = NTHREAD / n_elements;	// Number of timestamps loaded in one iteration by all active threads
 
+	// WARP grouping
+	const int warp_idx = tidx % WARP_SIZE;
+	const int warp = tidx / WARP_SIZE;
+	const int n_warps_per_grp = WARP_SIZE / n_timestamp_iter;
+	const int warp_grp = warp / n_warps_per_grp;	// Devide all warps into groups to load one timestamp by each group
+	const int warp_grp_idx = warp_idx + (warp - n_warps_per_grp * warp_grp) * WARP_SIZE; // Index of thread within a warp group
 
 	const int idata_offset = bidx * conf.interval * conf.n_channel * n_elements + bidy * n_elements;
-	const int odata_offset = bidy * conf.n_samples / conf.interval + bidx;
+	const int odata_offset = bidy * conf.n_samples / conf.interval + bidx;		//
 
-	// float2
-	float2 voltage;
+	int idata_glob_idx;
+	float2 voltage, weight;
 	float power;
-	float xy = 0;
 
-	extern __shared__ char s_mem[];
 
-	float2 *s_idata = reinterpret_cast<float2*>(&s_mem[0]); // Shared memory for input data
+	__shared__ float2 s_idata[SHARED_IDATA]; // Shared memory for input data
 
-	float *s_odata = reinterpret_cast<float*>(&s_mem[n_elements * sizeof(float2)]); // Shared memory for output data
+	extern __shared__ float s_mem[];
+	float *s_odata = &s_mem[0]; // Shared memory for output data
+	float *s_intermediate = &s_mem[conf.n_beam]; // Shared memory for intermediate results
 
-	for(int t = 0; t < conf.interval; t++)
+
+	/* IMPORTANT: s_odata has to be initialized to zero for each element in the array*/
+	for(int b = 0; b < conf.n_beam; b += NTHREAD)
 	{
+		if(b + tidx < conf.n_beam)
+			s_odata[b + tidx] = 0;
+	}
 
-		// load idata to shared memory for one timestep
-		for(int i = 0; i < n_elements; i += NTHREAD)
+
+	for(int t = 0; t < conf.interval; t += n_timestamp)
+	{
+		for(int i = 0; i < n_timestamp; i+=n_timestamp_iter)
 		{
-			s_idata[tidx + i] = idata[idata_offset + tidx + i + ];
+			idata_glob_idx = (t + warp_grp + i) * conf.n_channel * n_elements + warp_grp_idx;
+			s_idata[i/n_timestamp_iter * NTHREAD + tidx] = idata[idata_offset + idata_glob_idx];
 		}
-		//syncthreads();
-		// All beams of one timestamps of one channel
+
+		__syncthreads();
+
 		for(int b = 0; b < conf.n_beam; b += WARPS)
 		{
-			// For each beam set accumulator 'xy' to zero
-			xy = 0;
-			for(int a = 0; a < conf.n_antenna; a += WARP_SIZE)
+			power = 0;
+			for(int a = 0; a < n_elements; a += WARP_SIZE)
 			{
-				for(int p = 0; p < conf.n_pol; p++)
-				{
-					// Complex multiplication: raw voltage * weight = voltage
-					voltage = cuCmulf(s_idata[conf.n_pol * (a + warp_idx) + p],
-						tex3D<float2>(weights, warp * b, bidy, conf.n_pol * (a + warp_idx)));
-					// Cacluate (real) power; Square and root cancel each other out
-					power = voltage.x * voltage.x + voltage.y * voltage.y;
-					// Add weighted power of all elements of one beam to accumulator 'xy'
-					xy += power / conf.interval;
-				}
+					weight = tex3D<float2>(weights, (a + warp_idx), bidy, warp + b);
+
+					for(int i = 0; i < n_timestamp; i++)
+					{
+						// Complex multiplication: raw voltage * weight = voltage
+						voltage = cuCmulf(s_idata[i * n_elements + (a + warp_idx)], weight);
+
+						// Cacluate (real) power; Square and root cancel each other out
+						power += voltage.x * voltage.x + voltage.y * voltage.y;
+					}
+
 			}
 			// Every thread accumulated polarizations + n_antenna/WARP_SIZE
 			// Load accumulated result to shared memory; Every thread has its own field, otherwise race condition may occur
-			s_odata[warp + b + warp_idx] = xy;
+			s_intermediate[tidx] = power;
+
+			// Reduction
+			int i = WARP_SIZE/2;
+			while(i != 0)
+			{
+				if(warp_idx < i)
+					s_intermediate[tidx] += s_intermediate[tidx + i];
+				i /= 2;
+			}
+
+
+			// After reduction the first warp adds intermediate results to dedicated shared output memory
+			// 31/32 are idled :-(
+			__syncthreads();
+			if(warp_idx == 0)
+				s_odata[b + warp] += s_intermediate[tidx];
 		}
 	}
 
-	// Reduction
-	// __syncthreads();
-	for(int b = 0; b < conf.n_beam; b += WARPS)
+	for(int b = 0; b < conf.n_beam; b += NTHREAD)
 	{
-		int i = WARP_SIZE/2;
-		while(i != 0)
+		if(b + tidx < conf.n_beam)
 		{
-			if(warp_idx < i)
-				s_odata[warp + b + warp_idx] += s_odata[warp + b + warp_idx + i];
-			i /= 2;
-		}
-		// After reduction the first thread within a warp transfers calculated beams to the global memory
-		if(warp_idx == 0)
-		{
-			odata[odata_offset + b * conf.n_channel * conf.n_samples / conf.interval] = s_odata[warp + b];
+			const int odata_glob_idx = (b + tidx) * conf.n_channel * conf.n_samples / conf.interval;
+			odata[odata_offset + odata_glob_idx] = s_odata[b + tidx] / conf.interval;
 		}
 	}
 }

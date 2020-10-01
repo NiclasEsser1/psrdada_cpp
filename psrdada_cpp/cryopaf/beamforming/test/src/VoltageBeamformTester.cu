@@ -242,7 +242,7 @@ TEST_P(VoltageBeamformTester, BeamformerVoltageHalf){
     << "-------------------------------------------------------------" << std::endl
     << " Testing voltage mode with T=__half2 (half precision 2x16bit)" << std::endl
     << "-------------------------------------------------------------" << std::endl << std::endl;
-  test<__half2>(1);
+  test<__half2>();
 }
 
 TEST_P(VoltageBeamformTester, BeamformerVoltageSingle){
@@ -250,20 +250,19 @@ TEST_P(VoltageBeamformTester, BeamformerVoltageSingle){
     << "-------------------------------------------------------------" << std::endl
     << "Testing voltage mode with T=float2 (single precision 2x32bit)" << std::endl
     << "-------------------------------------------------------------" << std::endl << std::endl;
-  test<float2>(1);
+  test<float2>();
 }
 
 
 INSTANTIATE_TEST_CASE_P(BeamformerTesterInstantiation, VoltageBeamformTester, ::testing::Values(
 
   // samples | channels | antenna | polarisation | beam | interval/integration | beamformer type
-  bf_config_t{32, 1, 16, 2, 1, 0, BF_TFAP}
-  // bf_config_t{2048, 1, 16, 2, 4, 0, BF_TFAP},
-  // bf_config_t{1024, 64, 32, 2, 32, 0, BF_TFAP},
-  // bf_config_t{1024, 64, 32, 1, 64, 0, BF_TFAP},
-  // bf_config_t{1024, 64, 64, 2, 32, 0, BF_TFAP},
-	// bf_config_t{4, 4, 4, 1, 4, 0, BF_TFAP},
-	// bf_config_t{1024, 64, 64, 2, 32, 0, SIMPLE_BF_TAFPT}
+  bf_config_t{32, 1, 16, 2, 1, 0, BF_TFAP},
+  bf_config_t{2048, 1, 16, 2, 4, 0, BF_TFAP},
+  bf_config_t{1024, 64, 32, 2, 32, 0, BF_TFAP},
+  bf_config_t{1024, 64, 32, 1, 64, 0, BF_TFAP},
+  bf_config_t{1024, 64, 64, 2, 32, 0, BF_TFAP},
+	bf_config_t{1024, 64, 64, 2, 32, 0, SIMPLE_BF_TAFPT}
 ));
 
 

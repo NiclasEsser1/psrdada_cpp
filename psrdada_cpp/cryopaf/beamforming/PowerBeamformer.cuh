@@ -60,7 +60,9 @@ public:
 private:
 	int id;
 	bool success = true;
-	std::size_t shared_mem_bytes;
+	std::size_t shared_mem_static;
+	std::size_t shared_mem_dynamic;
+	std::size_t shared_mem_total;
 	bf_config_t *_conf;	// TODO: non pointer
 	dim3 grid_layout;
 	dim3 block_layout;

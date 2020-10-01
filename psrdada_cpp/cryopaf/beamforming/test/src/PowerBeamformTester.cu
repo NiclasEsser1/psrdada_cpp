@@ -71,15 +71,16 @@ void PowerBeamformTester::test(int device_id)
       if constexpr (std::is_same<T, __half2>::value)
         host_input[i] = __float22half2_rn({normal_dist(generator), normal_dist(generator)});
       else
-        host_input[i] = {1,1};//{normal_dist(generator), normal_dist(generator)};
-  }
-  // Build complex weight as C * exp(i * theta).
+				host_input[i] = {normal_dist(generator), normal_dist(generator)};
+	}
+
+	// Generate test weightsl
   for (size_t i = 0; i < host_weights.size(); i++)
   {
       if constexpr (std::is_same<T, __half2>::value)
         host_weights[i] = __float22half2_rn({normal_dist(generator), normal_dist(generator)});
-      else
-        host_weights[i] = {1,1};//{normal_dist(generator), normal_dist(generator)};
+			else
+				host_weights[i] = {normal_dist(generator), normal_dist(generator)};
   }
 
   // Allocate device memory & assign test samples
@@ -138,7 +139,7 @@ void PowerBeamformTester::compare(
 			}
 
       ASSERT_TRUE(std::abs(cpu_element - gpu_element) <= std::abs(gpu_element)*tol/2)
-        << "Beamformer with Stokes I: CPU and GPU results are unequal for element " << std::to_string(i) << std::endl
+      	<< "Beamformer with Stokes I: CPU and GPU results are unequal for element " << std::to_string(i) << std::endl
         << "  CPU result: " << std::to_string(cpu_element) << std::endl
         << "  GPU result: " << std::to_string(gpu_element) << std::endl;
   }
@@ -155,11 +156,11 @@ void PowerBeamformTester::gpu_process(
   thrust::device_vector<U>& out,
   thrust::device_vector<T>& weights)
 {
-  PowerBeamformer<T, U> cu_bf(&_conf, id);
+  PowerBeamformer<T, U> bf(&_conf, id);
 
 	if(_conf.bf_type == BF_TFAP)
-		cu_bf.upload_weights(weights);
-  cu_bf.process(in, out, weights);
+		bf.upload_weights(weights);
+  bf.process(in, out, weights);
   CUDA_ERROR_CHECK(cudaDeviceSynchronize());
 }
 
@@ -170,47 +171,44 @@ void PowerBeamformTester::cpu_process(
   thrust::host_vector<U>& out,
   thrust::host_vector<T>& weights)
 {
-	int pt = _conf.n_pol;
-	int fpt = _conf.n_channel * pt;
-	int afpt = _conf.n_antenna * fpt;
+	int ap = _conf.n_antenna * _conf.n_pol;
+	int fap = _conf.n_channel * ap;
 	int out_idx, in_idx, weight_idx;
-	for(int t = 0; t < _conf.n_samples/_conf.interval; t++)
+	float2 voltage;
+	for(int t = 0; t < _conf.n_samples; t+=_conf.interval)
 	{
 		for(int b = 0; b < _conf.n_beam; b++)
 		{
-			for(int a = 0; a < _conf.n_antenna; a++)
+			for(int f = 0; f < _conf.n_channel; f++)
 			{
-				for(int f = 0; f < _conf.n_channel; f++)
+				out_idx = b * _conf.n_channel * _conf.n_samples/_conf.interval + f * _conf.n_samples/_conf.interval + t/_conf.interval;
+				for(int a = 0; a < _conf.n_antenna; a++)
 				{
-					float2 tmp{0,0};
-
-					for(int i = 0; i < _conf.interval; i++)
+					for(int p = 0; p < _conf.n_pol; p++)
 					{
-						for(int p = 0; p < _conf.n_pol; p++)
+						for(int i = 0; i < _conf.interval; i++)
 						{
-							in_idx = (t+i) * afpt + a * fpt + f * pt + p;
-							weight_idx = b * afpt + a * fpt + f * pt + p;
+							in_idx = (t+i) * fap + f * ap + a * _conf.n_pol + p;
+							weight_idx = b * fap + f * ap + a * _conf.n_pol + p;
+
 							if constexpr (std::is_same<T, float2>::value)
 							{
-								tmp = cuCaddf(tmp, cuCmulf(in[in_idx], weights[weight_idx]));
+								voltage = cuCmulf(in[in_idx], weights[weight_idx]);
+								out[out_idx] += voltage.x * voltage.x + voltage.y * voltage.y;
 							}
-							else //if constexpr (std::is_same<T, __half2>::value)
+							else if constexpr (std::is_same<T, __half2>::value)
 							{
-								tmp = cuCaddf(tmp, cuCmulf(__half22float2(in[in_idx]), __half22float2(weights[weight_idx])));
+								voltage = cuCmulf(__half22float2(in[in_idx]), __half22float2(weights[weight_idx]));
+								out[out_idx] = __float2half(__half2float(out[out_idx])
+									+ voltage.x * voltage.x + voltage.y * voltage.y) / _conf.interval;
 							}
 						}
-						out_idx = b * _conf.n_samples/_conf.interval * _conf.n_channel + t * _conf.n_channel + f;
-						if constexpr (std::is_same<T, float2>::value)
-							out[out_idx] += (tmp.x * tmp.x + tmp.y * tmp.y)/_conf.interval;
-						else if constexpr (std::is_same<T, __half2>::value)
-							out[out_idx] = __float2half(__half2float(out[out_idx]) + pow(cuCabsf(tmp), 2)/_conf.interval);
 					}
-
 				}
+				out[out_idx] /= _conf.interval;
 			}
 		}
 	}
-
 }
 
 
@@ -231,7 +229,7 @@ TEST_P(PowerBeamformTester, BeamformerPowerSingle){
     << "-------------------------------------------------------------" << std::endl
     << " Testing power mode with T=float2 (single precision 2x32bit) " << std::endl
     << "-------------------------------------------------------------" << std::endl << std::endl;
-  test<float2, float>(1);
+  test<float2, float>(0);
 }
 
 
@@ -240,9 +238,12 @@ INSTANTIATE_TEST_CASE_P(BeamformerTesterInstantiation, PowerBeamformTester, ::te
 
 	// bf_config_t{1024, 64, 64, 2, 32, 1, SIMPLE_BF_TAFPT},
   // bf_config_t{1024, 1, 1024, 2, 1, 1, SIMPLE_BF_TAFPT},
-	// bf_config_t{2048, 1, 16, 2, 4, 8, SIMPLE_BF_TAFPT},
-	bf_config_t{24, 256, 512, 2, 2048, 8, BF_TFAP},
-  bf_config_t{24, 8, 1024, 2, 2048, 16, BF_TFAP}
+	// bf_config_t{2048, 1, 16, 2, 4, 1, SIMPLE_BF_TAFPT},
+	bf_config_t{32, 1, 64, 2, 32, 16, BF_TFAP},
+	bf_config_t{64, 16, 128, 1, 32, 16, BF_TFAP},
+	bf_config_t{64, 8, 256, 2, 64, 32, BF_TFAP},
+	bf_config_t{128, 1, 32, 2, 64, 64, BF_TFAP},
+	bf_config_t{4096, 64, 256, 2, 32, 64, BF_TFAP}
   // bf_config_t{1024, 64, 32, 2, 32, 8, BF_TFAP},
   // bf_config_t{1024, 64, 32, 1, 64, 8, BF_TFAP},
   // bf_config_t{1024, 64, 64, 2, 32, 8, BF_TFAP},
