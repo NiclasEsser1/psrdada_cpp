@@ -33,6 +33,7 @@
 
 # Directories
 build/
+psrdada_cpp/cryopaf/tools/beanfarmer
 
 # Editor files
 *~

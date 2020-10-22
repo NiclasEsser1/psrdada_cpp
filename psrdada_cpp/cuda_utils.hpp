@@ -6,6 +6,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
+#include <cutensor.h>
 #include <cufft.h>
 #include <sstream>
 #include <stdexcept>
@@ -202,11 +203,28 @@ inline void cublas_error_checker(int code, const char* file, int line)
         }
         error_msg << std::endl
            << "File: " << file << std::endl
-           << "Line: " << std::to_string(line) << std::endl;
+           << "Line: " << line << std::endl;
         throw std::runtime_error(error_msg.str());
      }
 }
 
+#define CUTENSOR_ERROR_CHECK(ans) {cutensor_error_checker(ans, __FILE__, __LINE__);}
+
+/**
+* @brief Function that raises an error on receipt of any cublasStatus_t
+* value that is not CUBLAS_STATUS_SUCCESS
+*/
+inline void cutensor_error_checker(cutensorStatus_t code, const char* file, int line)
+{
+    if( code != CUTENSOR_STATUS_SUCCESS )
+    {
+        std::stringstream error_msg;
+        error_msg << "CUTENSOR failed with error: " << cutensorGetErrorString(code) << std::endl
+          << "File " << file << std::endl
+          << "Line " << line << std::endl;
+         throw std::runtime_error(error_msg.str());
+    }
+}
 
 #endif //ENABLE_CUDA
 #endif //PSRDADA_CPP_CUDA_UTILS_HPP
