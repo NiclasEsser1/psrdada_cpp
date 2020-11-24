@@ -1,0 +1,53 @@
+// STATE: Start
+//  ENTRY: Program start
+//  TASKS:
+//      - Parse arguments
+//      - validate
+//  EXIT: After argument validation
+
+// STATE: ERROR
+//  ENTRY: When ever quit_status changed to 1
+//  TASKS:
+//      - Handle error state
+//      - print error state to log
+//  EXIT: Go to exit STATE
+
+// STATE: Initializing
+//  ENTRY: directly after Start state
+//  TASKS:
+//      - Create thread pool
+//      - Init capture control thread
+//      - Init buffer control thread
+//      - Init capture socket
+//  EXIT: If all threads return succesfull init
+
+// STATE: Idle
+//  ENTRY: After initializing or on command "IDLE-CAPTURE"
+//  TASKS:
+//      - Reveive command on capture control
+//      - Idled until command
+//      - Parse command and execute next state
+//  EXIT: If command could parsed
+
+// STATE: Capturing
+//  ENTRY: On command: "START-CAPTURE"
+//  Init TASK:
+//      - Sniff UDP packets, get reference information (if necessary)
+//  TASKS:
+//      - Capture Threads: sockets reveiving UPD packets
+//          - parse & counting packets
+//          - Calculating buffer position
+//          - copying to ringbuffer
+//          - Signal to buffer control
+//      - Capture CTRL Thread: receives commands
+//          - Idle until command received
+//          - Singalize threapool about received commands
+//      - Buffer CTRL Thread: controls & interacts with psrdada_db
+//  EXIT: On command receive. Back to Idle STATE or exit State
+
+// STATE: Exit
+//  ENTRY: On command: "STOP-CAPTURE"
+//  TAKS:
+//      - Stop threads
+//      - General cleanup; free buffer etc.
+//  EXIT: Program end

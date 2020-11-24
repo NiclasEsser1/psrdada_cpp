@@ -1,5 +1,5 @@
 # -------------------------------------------
-# Build and integrate a thirdparty dependency 
+# Build and integrate a thirdparty dependency
 #
 # Copyright Oxford university 2018
 # Released under GPL v3
@@ -24,7 +24,7 @@ macro(add_thirdparty_subdirectory dependency_name dependency_dir)
     set(DOC_INSTALL_DIR ${DOC_INSTALL_DIR}/${dependency_install_path})
 
     add_subdirectory(${dependency_dir})
-    
+
     # restore current project state
     list(GET LIBRARY_INSTALL_DIR_STACK -1 LIBRARY_INSTALL_DIR)
     list(REMOVE_AT LIBRARY_INSTALL_DIR_STACK -1)

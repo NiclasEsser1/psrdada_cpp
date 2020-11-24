@@ -8,7 +8,7 @@ FIND_PATH(PSRDADA_INCLUDE_DIR dada_def.h
     ${PSRDADA_INSTALL_DIR}/include
     /usr/local/include
     /usr/include )
-message("Found ${PSRDADA_INCLUDE_DIR} : ${PSRDADA_INSTALL_DIR}")
+message("Found my psrdada ${PSRDADA_INCLUDE_DIR} : ${PSRDADA_INSTALL_DIR}")
 
 SET(PSRDADA_NAMES psrdada)
 FOREACH( lib ${PSRDADA_NAMES} )

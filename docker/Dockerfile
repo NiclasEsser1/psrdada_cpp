@@ -57,9 +57,7 @@ WORKDIR $PSRHOME
 
 # Install PSRDADA
 COPY psrdada_cvs_login $PSRHOME
-RUN  chmod +x psrdada_cvs_login &&\
-    ./psrdada_cvs_login && \
-    cvs -z3 -d:pserver:anonymous@psrdada.cvs.sourceforge.net:/cvsroot/psrdada co -P psrdada
+RUN  git clone git://git.code.sf.net/p/psrdada/code psrdada
 ENV PSRDADA_HOME $PSRHOME/psrdada
 WORKDIR $PSRDADA_HOME
 RUN mkdir build/ && \
