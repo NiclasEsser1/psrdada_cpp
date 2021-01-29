@@ -21,5 +21,5 @@ cuda_add_executable(capture src/capture_cli.cpp)
 target_link_libraries(capture ${PSRDADA_CPP_EFFELSBERG_PAF_CAPTURING_LIBRARIES})
 install(TARGETS capture DESTINATION bin)
 
-#add_subdirectory(test)
+add_subdirectory(test)
 endif(ENABLE_CUDA)

@@ -19,6 +19,9 @@ namespace psrdada_cpp {
      */
     key_t string_to_key(std::string const& in);
 
+
+    std::string key_to_string(key_t const& in);
+
     /**
      * @brief      Sets the log level for boost logging.
      *

@@ -40,6 +40,11 @@ namespace psrdada_cpp {
         return ipcbuf_get_nbufs(_hdu->header_block);
     }
 
+    std::size_t DadaClientBase::data_buffer_nfull() const
+    {
+        return std::size_t(ipcbuf_get_nfull((ipcbuf_t *)_hdu->data_block));
+    }
+
     void DadaClientBase::connect()
     {
         BOOST_LOG_TRIVIAL(debug) << this->id() << "Connecting to dada buffer";

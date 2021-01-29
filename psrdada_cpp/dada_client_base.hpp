@@ -52,6 +52,11 @@ namespace psrdada_cpp {
         std::size_t header_buffer_count() const;
 
         /**
+         * @brief      Get the number of full blocks in the ring buffer
+         */
+        std::size_t data_buffer_nfull() const;
+
+        /**
          * @brief      Connect to ring buffer
          */
         void connect();

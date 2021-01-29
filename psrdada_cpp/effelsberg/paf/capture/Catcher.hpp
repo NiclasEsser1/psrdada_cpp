@@ -7,14 +7,15 @@
 #include "psrdada_cpp/effelsberg/paf/capture/Socket.hpp"
 #include "psrdada_cpp/effelsberg/paf/capture/Types.hpp"
 #include "psrdada_cpp/multilog.hpp"
+#include "psrdada_cpp/double_buffer.hpp"
 
 namespace psrdada_cpp {
 namespace effelsberg{
 namespace paf{
 namespace capture{
 
-boost::mutex rbuffer_locker;
-bool rbuffer_lock = false;
+extern boost::mutex lock_buffer;
+extern DoubleBuffer<std::vector<char>> buffer;
 
 class Catcher : public AbstractThread
 {
@@ -26,10 +27,7 @@ public:
     void run();
     void clean();
     void stop();
-    void set_dptr(char* p){rbuf = p;}
-    void set_tptr(char* p){tbuf = p;}
     void complete(bool val){_complete.store(val);}
-    void lock_buffer(bool val){lock.store(val);}
     bool complete(){return _complete.load();}
 
     std::vector<std::size_t>* position_of_temp_packets(){return &tmp_pos;}
@@ -56,7 +54,6 @@ private:
 
     bool referencer = false;
     std::atomic<bool> _complete;
-    std::atomic<bool> lock;
 };
 
 }

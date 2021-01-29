@@ -31,7 +31,6 @@ std::vector<std::size_t> seperate_by(std::string str, std::string expr)
     std::vector<std::size_t> res;
     if(str.find(expr) != std::string::npos)
     {
-
         std::vector<std::string> split;
         boost::split(split, str, boost::is_any_of(expr));
         for(auto& it : split)
@@ -47,12 +46,10 @@ std::vector<std::size_t> seperate_by(std::string str, std::string expr)
 
 int main(int argc, char** argv)
 {
-
     // Variables to store command line options
     capture_conf_t conf;
     try
     {
-
         // Parse command line
         namespace po = boost::program_options;
         po::options_description desc("Options");
@@ -152,7 +149,7 @@ int main(int argc, char** argv)
             po::store(po::parse_command_line(argc, argv, desc), vm);
             if ( vm.count("help")  )
             {
-                  std::cout << "CAPTURING -- The BMF capturing program for bypassing the beamformer" << std::endl
+                  std::cout << "CAPTURING -- The PAF capture programm" << std::endl
                   << desc << std::endl;
                   return SUCCESS;
             }
@@ -173,9 +170,8 @@ int main(int argc, char** argv)
             }
             multilog_t* ulogger = logger.native_handle();
             multilog_add(ulogger, fid);
-            conf.print();
             DadaOutputStream ostream(conf.key, logger);
-            CaptureController<decltype(ostream)> ctrl(ostream, &conf, logger);
+            CaptureController<decltype(ostream)> ctrl(&conf, logger, ostream);
             ctrl.start();
         }
         catch(po::error& e)

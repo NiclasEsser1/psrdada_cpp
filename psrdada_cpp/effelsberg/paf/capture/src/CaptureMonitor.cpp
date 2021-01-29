@@ -15,12 +15,12 @@ CaptureMonitor::~CaptureMonitor()
 }
 void CaptureMonitor::init()
 {
-    printf("Initializing CaptureMonitor %d\n", _tid);
+    BOOST_LOG_TRIVIAL(debug) << "Initializing CaptureMonitor " << _tid;
 }
 void CaptureMonitor::run()
 {
     _active = true;
-    printf("Running worker from CaptureMonitor %d\n", _tid);
+    BOOST_LOG_TRIVIAL(debug) << "Running worker from CaptureMonitor " << _tid;
     while(!_quit)
     {
         sleep(1);
@@ -29,12 +29,12 @@ void CaptureMonitor::run()
 }
 void CaptureMonitor::clean()
 {
-    printf("Cleaning CaptureMonitor %d\n", _tid);
+    BOOST_LOG_TRIVIAL(debug) << "Cleaning CaptureMonitor " << _tid;
 }
 void CaptureMonitor::stop()
 {
     // _writer->reset();
-    printf("Stopping CaptureMonitor %d\n", _tid);
+    BOOST_LOG_TRIVIAL(debug) << "Stopping CaptureMonitor " << _tid;
     _active = false;
     _quit = true;
 }

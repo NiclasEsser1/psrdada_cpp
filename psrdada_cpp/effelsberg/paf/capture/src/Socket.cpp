@@ -34,19 +34,20 @@ Socket::~Socket()
 bool Socket::open_connection(int nof_clients, int reuse)
 {
 	// Allow socket address to be reused
-	if( setsockopt(_sock, SOL_SOCKET, SO_REUSEADDR, (void*)&reuse, sizeof(reuse)) < 0 )
-	{
-	    fprintf(stderr, "setsockopt() failed: %s (File: %s line: %d)\n", strerror(errno), __FILE__, __LINE__);
-	}
-	if( bind(_sock, (struct sockaddr *)&_sock_conf, sizeof(_sock_conf)) < 0 )
-	{
-		logger.write(LOG_ERR, "bind() at %s:%d failed: %s (File: %s line: %d\n)", _addr.c_str(), _port, strerror(errno), __FILE__, __LINE__);
-		_state = -1;
-		return false;
-	}
+	// if( setsockopt(_sock, SOL_SOCKET, SO_REUSEADDR, (void*)&reuse, sizeof(reuse)) < 0 )
+	// {
+	//     logger.write(LOG_ERR, "setsockopt() failed: %s (File: %s line: %d)\n", strerror(errno), __FILE__, __LINE__);
+	// }
+
 	// If socket should be server
     if(_role)
     {
+		if( bind(_sock, (struct sockaddr *)&_sock_conf, sizeof(_sock_conf)) < 0 )
+		{
+			logger.write(LOG_ERR, "bind() at %s:%d failed: %s (File: %s line: %d\n)", _addr.c_str(), _port, strerror(errno), __FILE__, __LINE__);
+			_state = -1;
+			return false;
+		}
 		if( listen(_sock, nof_clients) < 0 )
 		{
 		   	logger.write(LOG_ERR, "listen() at %s:%d failed: %s (File: %s line: %d\n)", strerror(errno), _addr.c_str(), _port, __FILE__, __LINE__);
@@ -54,7 +55,7 @@ bool Socket::open_connection(int nof_clients, int reuse)
 			return false;
 		}
 
-		printf("Waiting for client to connect ...\n");
+		BOOST_LOG_TRIVIAL(info) << "Waiting for client to connect ...";
 
 		logger.write(LOG_INFO, "Waiting for controlling client request %s:%d ...\n)", _addr.c_str(), _port);
 
@@ -66,7 +67,7 @@ bool Socket::open_connection(int nof_clients, int reuse)
 		}
 		logger.write(LOG_INFO, "Controlling client connected\n)");
 
-		printf("Client connected\n");
+		BOOST_LOG_TRIVIAL(info) << "Client connected on " << _addr << ":" << _port;
 	// Is socket plays client role
     }else{
 	    if( connect(_sock, (struct sockaddr *)&_sock_conf, sizeof(_sock_conf)) < 0 )
@@ -81,7 +82,7 @@ bool Socket::open_connection(int nof_clients, int reuse)
 }
 bool Socket::close_connection()
 {
-	printf("Closing socket connection\n");
+	BOOST_LOG_TRIVIAL(info) << "Closing socket connection on " << _addr << ":" << _port;
     shutdown(_sock, 2);
 	close(_sock);
 }
@@ -94,6 +95,7 @@ int Socket::receive(char* ptr, std::size_t size, int flag, struct sockaddr* _fro
 		logger.write(LOG_INFO, "No message received %s:%d (File: %s line: %d)", _addr, _port, __FILE__, __LINE__);
 		return false;
 	}
+	return true;
 }
 int Socket::reading(char* ptr, std::size_t size)
 {
@@ -104,10 +106,32 @@ int Socket::reading(char* ptr, std::size_t size)
 		return read(_sock, ptr, size);
 	}
 }
-// template<typename T>
-bool Socket::send(char* msg, std::size_t size, int flag)
+
+bool Socket::transmit(const char* msg, std::size_t size, int flag, const struct sockaddr *dest_addr, socklen_t addrlen)
 {
+	int result = 0;
+	if ( (result = sendto(_sock, msg, size, flag, dest_addr, addrlen)) == -1)
+	{
+		BOOST_LOG_TRIVIAL(error) << "Error when transmitting to " << _addr << ":" << _port;
+		logger.write(LOG_ERR, "send() at %s:%d failed: %s (File: %s line: %d\n)", strerror(errno), _addr.c_str(), _port, __FILE__, __LINE__);
+		_state = -1;
+		return false;
+	}
+	return true;
 }
+
+// bool Socket::transmit(const char* msg, std::size_t size)
+// {
+// 	if ( write(_sock, msg, size) != size)
+// 	{
+// 		BOOST_LOG_TRIVIAL(error) << "Error when transmitting to " << _addr << ":" << _port;
+// 		logger.write(LOG_ERR, "send() at %s:%d failed: %s (File: %s line: %d\n)", strerror(errno), _addr.c_str(), _port, __FILE__, __LINE__);
+// 		_state = -1;
+// 		return false;
+// 	}
+// 	return true;
+// }
+
 
 bool Socket::set_timeout(struct timeval tout)
 {
@@ -118,6 +142,7 @@ bool Socket::set_timeout(struct timeval tout)
 	}
 	return true;
 }
+
 }
 }
 }

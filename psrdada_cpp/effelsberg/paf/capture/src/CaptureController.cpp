@@ -4,39 +4,38 @@ namespace paf{
 namespace capture{
 
 template<class HandlerType>
-CaptureController<HandlerType>::CaptureController(HandlerType& handle, capture_conf_t *conf, MultiLog& log)
-    : handler(handle),
-    _conf(conf),
-    logger(log)
+CaptureController<HandlerType>::CaptureController(capture_conf_t *conf, MultiLog& log, HandlerType& handle)
+    : _conf(conf), logger(log), handler(handle), _dada_client(handle.client())
 {
-    _state = STARTING;
-	/** Create instance to monitor psrdada buffer **/
-	monitor = new CaptureMonitor(_conf->key, logger);
+  _state = STARTING;
+	/** Create instance to _monitor psrdada buffer **/
+	_monitor = new CaptureMonitor(_conf->key, logger);
 
-	/** Create instance to provide an TCP interface for control commans **/
-    interface = new CaptureInterface(logger, _conf->capture_ctrl_addr, _conf->capture_ctrl_port);
+	/** Create instance to provide an TCP interface for control commands **/
+  _ctrl_socket = new ControlSocket(logger, _conf->capture_ctrl_addr, _conf->capture_ctrl_port);
 
 	_conf->frame_size = codif_t::size - _conf->offset;
 	_conf->tbuffer_size = _conf->nframes_tmp_buffer * _conf->frame_size * _conf->nbeam;
-	_conf->rbuffer_hdr_size = handler.client().header_buffer_size();
-	_conf->rbuffer_size = handler.client().data_buffer_size();
-	if(_conf->rbuffer_size%_conf->frame_size){
-		logger.write(LOG_ERR, "Failed: Ringbuffer size (%ld) is not a multiple of frame size (%ld). (File: %s line: %d)", _conf->frame_size, _conf->rbuffer_size, __FILE__, __LINE__);
-		throw std::runtime_error("Failed: Ringbuffer size is not a multiple of frame size" );
+	_conf->rbuffer_hdr_size = _dada_client.header_buffer_size();
+	_conf->rbuffer_size = _dada_client.data_buffer_size();
+
+	if(_conf->rbuffer_size%_conf->frame_size)
+	{
+		logger.write(LOG_ERR, "Failed: Ringbuffer size (%ld) is not a multiple of frame size (%ld). (File: %s line: %d)",  _conf->rbuffer_size, _conf->frame_size, __FILE__, __LINE__);
+		throw std::runtime_error("Failed: Ringbuffer size mismatch, see logs for details" );
 	}
 
 	// Align raw_header vector to required size
 	raw_header.resize(_conf->rbuffer_hdr_size );
-	block.resize(_conf->rbuffer_size);
-	tbuf.resize(_conf->tbuffer_size);
-
-    /** Initialize DadaOutputStream **/
+	buffer.resize(_conf->rbuffer_size);
+  /** Initialize DadaOutputStream **/
 	// Get psrdada buffer sizes
 	// Open the psrdada header file
-    input_file.open(_conf->psrdada_header_file, std::ios::in | std::ios::binary);
+  	input_file.open(_conf->psrdada_header_file, std::ios::in | std::ios::binary);
 	if(input_file.fail())
 	{
 		logger.write(LOG_ERR, "ifstream::open() on %s failed: %s (File: %s line: %d)\n", _conf->psrdada_header_file.c_str(), strerror(errno), __FILE__, __LINE__);
+		throw std::runtime_error("Failed: ifstream::open(), see logs for details " );
 	}
 	// Readout the file
 	input_file.read(raw_header.data(), _conf->rbuffer_hdr_size );
@@ -44,12 +43,13 @@ CaptureController<HandlerType>::CaptureController(HandlerType& handle, capture_c
 	RawBytes header(raw_header.data(), _conf->rbuffer_hdr_size , _conf->rbuffer_hdr_size , false);
 	// Finally initialize the handler
 	handler.init(header);
-
 }
+
 template<class HandlerType>
 CaptureController<HandlerType>::~CaptureController()
 {
 }
+
 template<class HandlerType>
 void CaptureController<HandlerType>::start()
 {
@@ -57,110 +57,98 @@ void CaptureController<HandlerType>::start()
     {
         _state = INITIALIZING;
 
-        interface->init();
-        monitor->init();
+        _ctrl_socket->init();
+        _monitor->init();
         // For each port create a Catcher (Worker) instance.
-		int tid = 0;
+				int tid = 0;
         for( auto& port : _conf->capture_ports )
         {
             catchers.push_back( new Catcher(_conf, logger, _conf->capture_addr, port) );
 			catchers.back()->id(tid);
 			catchers.back()->init();
-			catchers.back()->set_dptr(block.data());
-			catchers.back()->set_tptr(tbuf.data());
 			temp_pos_list.push_back(catchers.back()->position_of_temp_packets());
             tid++;
         }
 
         // Start worker BufferControl
         // Monitors capturing and write to ringbuffer
-        monitor->thread( new boost::thread(boost::bind(&AbstractThread::run, monitor)) );
+        _monitor->thread( new boost::thread(boost::bind(&AbstractThread::run, _monitor)) );
         // register BufferControl worker as the second thread in boost::thread_group
-        t_grp.add_thread(monitor->thread());
+        t_grp.add_thread(_monitor->thread());
         // Enviroment initialized, idle program until command received
         _state = IDLE;
         // basically listen on socket to receive control commands
-        interface->thread( new boost::thread(boost::bind(&AbstractThread::run, interface)) );
+        _ctrl_socket->thread( new boost::thread(boost::bind(&AbstractThread::run, _ctrl_socket)) );
         // register CaptureControl worker as the first thread in boost::thread_group
-        t_grp.add_thread(interface->thread());
+        t_grp.add_thread(_ctrl_socket->thread());
 
         /** MAIN THREAD **/
         // Call watch_dog() function to observe all subthreads
         this->watch_dog();
     }else{
+		BOOST_LOG_TRIVIAL(warning) << "Can not initialize when main program is in state" << state();
         logger.write(LOG_WARNING, "Can not initialize when main program is in state %s (File: %s line: %d)\n", state().c_str(), __FILE__, __LINE__);
     }
 }
 template<class HandlerType>
 void CaptureController<HandlerType>::watch_dog()
 {
-    interface->state(_state);
-	printf("Watching state: %d\n", _state);
+    _ctrl_socket->state(_state);
+		BOOST_LOG_TRIVIAL(info) << "Current state " << state();
     while(!_quit)
     {
-        // CAUTION: _state is accessed by CaptureInterface thread and main thread.
+        // CAUTION: _state is accessed by ControlSocket thread and main thread.
         // Since main thread is just reading the memory, it should be okay to not lock/unlock the location
-        if(_state != interface->state())
+        if(_state != _ctrl_socket->state())
         {
-			printf("State changed\n");
-            switch(interface->state())
+						BOOST_LOG_TRIVIAL(info) << "State changed from " << state() << " to " << _ctrl_socket->state();
+            switch(_ctrl_socket->state())
             {
                 case CAPTURING:
-					_state = interface->state();
+					_state = _ctrl_socket->state();
                     this->launch_capture();
-					interface->state(_state);
-                break;
+					_ctrl_socket->state(_state);
+                	break;
 
                 case IDLE:
-                break;
+                	break;
 
                 case STOPPING:
-					_state = interface->state();
+					_state = _ctrl_socket->state();
                     this->stop();
-					interface->state(_state);
-                break;
+					_ctrl_socket->state(_state);
+                	break;
 
                 case EXIT:
-					_state = interface->state();
+					_state = _ctrl_socket->state();
                     this->clean();
-					interface->state(_state);
-                break;
+					_ctrl_socket->state(_state);
+                	break;
 
                 case ERROR_STATE:
-                break;
+                	break;
             }
         }
-		// sleep(1);
-		// printf("State")
-		// Transfer data on complete
-		if( (buffer_complete()) && (_state == CAPTURING) )
+		if( (all_thread_rdy(true)) && (_state == CAPTURING) )
 		{
-			lock_buffer(false);
-			RawBytes data(block.data(), _conf->rbuffer_size, _conf->rbuffer_size);
-            handler(data);
+			// lock_buffer.lock();
+			_conf->dataframe_ref = 0;
+			// lock_buffer.unlock();
+			// lock_buffer.lock();
+			buffer.swap();
+			// lock_buffer.unlock();
+
+			RawBytes data(buffer.b()->data(), _conf->rbuffer_size, _conf->rbuffer_size);
+  			handler(data);
 			bytes_written += data.used_bytes();
-			printf("Bytes written: %ld\n", bytes_written);
-			lock_buffer(true);
-
-			// Copy remaing temporary data
-			// Maybe bottleneck
-
-			for(std::size_t i = 0; i < temp_pos_list.size(); ++i)
-			{
-				std::vector<std::size_t> list = *temp_pos_list[i];
-				for(std::size_t k = 0; k < list.size(); ++k)
-				{
-					if(list[k] >= 0){
-						memcpy((void*)&block[list[k]], (void*)&tbuf[list[k]], _conf->frame_size);
-						list[k]=-1;
-					// Reached end of ringbuffer
-					} else {
-						break;
-					}
-				}
-			}
-			while(buffer_complete());
-			lock_buffer(false);
+			BOOST_LOG_TRIVIAL(debug) << "Bytes written: " << bytes_written;
+			signal_to_worker(false);
+		}
+		if( _dada_client.data_buffer_nfull() >= _dada_client.data_buffer_count() -1 )
+		{
+			_quit = true;
+			logger.write(LOG_ERR, "All dada buffers are full, has to abort (File: %s line: %d)\n", __FILE__, __LINE__);
+			BOOST_LOG_TRIVIAL(error) << "All dada buffers are full, has to abort ... ";
 		}
     }
 	this->clean();
@@ -168,7 +156,6 @@ void CaptureController<HandlerType>::watch_dog()
 	{
     	t_grp.join_all();
 	}
-    printf("Leaving program...\n");
 }
 
 template<class HandlerType>
@@ -193,12 +180,12 @@ void CaptureController<HandlerType>::clean()
         {
             obj->clean();
         }
-        if(!stop_thread(monitor))
-		{
+        if(!stop_thread(_monitor))
+				{
 	        exit(EXIT_FAILURE);
         }
-        monitor->clean();
-        interface->clean();
+        _monitor->clean();
+        _ctrl_socket->clean();
     }else{
         exit(EXIT_FAILURE);
     }
@@ -217,6 +204,7 @@ void CaptureController<HandlerType>::launch_capture()
             t_grp.add_thread(obj->thread());
         }
     }else{
+		BOOST_LOG_TRIVIAL(warning) << "Can not capture when main program is in state " << state() << " state not changed";
         logger.write(LOG_WARNING, "Can not capture when main program is in state %s (File: %s line: %d)\n", state().c_str(), __FILE__, __LINE__);
     }
 }
@@ -240,12 +228,12 @@ bool CaptureController<HandlerType>::stop_thread(AbstractThread* obj)
 }
 
 template<class HandlerType>
-bool CaptureController<HandlerType>::buffer_complete()
+bool CaptureController<HandlerType>::all_thread_rdy(bool flag)
 {
 	int cnt = 0;
 	for(auto& worker : catchers)
 	{
-		if(worker->complete())
+		if(worker->complete() == flag)
 		{
 			cnt++;
 		}
@@ -255,27 +243,22 @@ bool CaptureController<HandlerType>::buffer_complete()
 		}
 	}
 	if(catchers.size() == cnt){
+		BOOST_LOG_TRIVIAL(info) << "Buffer completed";
 		logger.write(LOG_INFO, "Buffer completed\n");
 		return true;
 	}
 	return false;
 }
+
 template<class HandlerType>
-void CaptureController<HandlerType>::buffer_complete(bool flag)
+void CaptureController<HandlerType>::signal_to_worker(bool flag)
 {
 	for(auto& worker : catchers)
 	{
 		worker->complete(flag);
 	}
 }
-template<class HandlerType>
-void CaptureController<HandlerType>::lock_buffer(bool flag)
-{
-	for(auto& worker : catchers)
-	{
-		worker->lock_buffer(flag);
-	}
-}
+
 
 template<class HandlerType>
 std::string CaptureController<HandlerType>::state()
@@ -311,7 +294,7 @@ std::string CaptureController<HandlerType>::state()
     return state;
 }
 
-CaptureInterface::CaptureInterface(MultiLog& log, std::string addr, int port)
+ControlSocket::ControlSocket(MultiLog& log, std::string addr, int port)
     : AbstractThread(log)
 {
     _sock = new Socket(logger, addr, port, true, SOCK_STREAM);
@@ -322,20 +305,21 @@ CaptureInterface::CaptureInterface(MultiLog& log, std::string addr, int port)
     }
 }
 
-void CaptureInterface::init()
+void ControlSocket::init()
 {
-    if( !(_sock->open_connection()) )
-    {
-        logger.write(LOG_ERR, "open_connection() failed at %s:%d (File: %s line: %d)\n", _sock->address().c_str(), _sock->port(), __FILE__, __LINE__);
-        exit(EXIT_FAILURE);
-    }
+	if( !(_sock->open_connection()) )
+	{
+		logger.write(LOG_ERR, "open_connection() failed at %s:%d (File: %s line: %d)\n", _sock->address().c_str(), _sock->port(), __FILE__, __LINE__);
+		exit(EXIT_FAILURE);
+	}
 }
 
-void CaptureInterface::run()
+void ControlSocket::run()
 {
     _active = true;
     while(!_quit)
     {
+		usleep(1000000);
         // Block thread until message received
         int bytes_read = _sock->reading(command, COMMAND_MSG_LENGTH);
 
@@ -344,32 +328,33 @@ void CaptureInterface::run()
         std::string str(command);
 
         if( str.compare(0,5, "START") == 0 ){
-            printf("Capturing...\n");
+            BOOST_LOG_TRIVIAL(debug) << "Capturing...";
             _state = CAPTURING;
         }else if( str.compare(0,4, "STOP") == 0 ){
-            printf("Stopping...\n");
+            BOOST_LOG_TRIVIAL(debug) << "Stopping...";
             _state = STOPPING;
         }else if( str.compare(0,4, "EXIT") == 0 ){
-            printf("Exit...\n");
+            BOOST_LOG_TRIVIAL(debug) << "Exit...";
             _state = EXIT;
-			return;
+						return;
         }else if( str.compare(0,5, "STATUS") == 0 ){
             // send_status();
         }else{
+			BOOST_LOG_TRIVIAL(debug) << "Capture control received unkown command: " << command;
             logger.write(LOG_WARNING, "Capture control received unkown command: %s\n", command, __FILE__, __LINE__);
         }
     }
     _active = false;
 }
 
-void CaptureInterface::stop()
+void ControlSocket::stop()
 {
-    printf("Stopping contrller interface\n");
+    BOOST_LOG_TRIVIAL(info) << "Stopping controller _ctrl_socket";
 }
 
-void CaptureInterface::clean()
+void ControlSocket::clean()
 {
-    printf("Cleaning controller interface\n");
+    BOOST_LOG_TRIVIAL(info) << "Cleaning controller _ctrl_socket";
     _sock->close_connection();
 }
 

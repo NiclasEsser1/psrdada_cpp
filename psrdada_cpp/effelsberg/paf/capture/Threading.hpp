@@ -13,10 +13,13 @@ namespace capture{
 class AbstractThread
 {
 public:
-    AbstractThread(MultiLog& log) : logger(log){
-        printf("Instantiated a thread object\n");
-    }
+    AbstractThread(MultiLog& log) : logger(log){}
+    // abstract methods
     virtual void init() = 0;
+    virtual void run() = 0;
+    virtual void stop() = 0;
+    virtual void clean() = 0;
+    
     void id(int id){_tid = id;}
     int id(){return _tid;}
     boost::thread* thread(){return t;}
@@ -24,9 +27,6 @@ public:
     bool active(){return _active;}
     bool quit(){return _quit;}
 // protected:
-    virtual void run() = 0;
-    virtual void stop() = 0;
-    virtual void clean() = 0;
 protected:
     boost::thread *t;
     MultiLog& logger;

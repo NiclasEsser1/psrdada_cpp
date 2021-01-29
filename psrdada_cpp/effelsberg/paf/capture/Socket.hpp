@@ -23,7 +23,7 @@ namespace capture{
 class Socket
 {
 public:
-    Socket(MultiLog &log, std::string addr, int port, bool role = true, int type = SOCK_STREAM, int family = AF_INET, int protocol = 0);
+    Socket(MultiLog &log, std::string addr, int port, bool role = true, int type = SOCK_DGRAM, int family = AF_INET, int protocol = 0);
 
     ~Socket();
 
@@ -36,14 +36,16 @@ public:
     // template<typename T>
     int receive(char* ptr, std::size_t size, int flag = 0, struct sockaddr* _from_sock = nullptr, socklen_t* _fromlen = nullptr);
 
-    // template<typename T>
-    bool send(char* msg, std::size_t size, int flag = 0);
+    bool transmit(const char* msg, std::size_t size, int flag = 0,  const struct sockaddr* dest_addr = NULL, socklen_t addrlen = 0);
 
     bool set_timeout(struct timeval tout);
 
     std::string address(){return _addr;}
     int port(){return _port;}
     int state(){return _state;}
+    struct sockaddr_in *sockaddr_in(){return &_sock_addr_in;}
+    struct sockaddr *sockaddr(){return &_sock_addr_in;}
+    socklen_t addrlen(){return _addrlen;}
 private:
     int _state;
     int _sock;
@@ -54,7 +56,8 @@ private:
     bool _role; // Server (=1) or client (=0) role
     bool _active = false;
     std::string _addr;
-    struct sockaddr_in _sock_conf; // Struct for creating POSIX socket
+    struct sockaddr_in _sock_addr_in; // Struct for creating POSIX socket
+    struct sockaddr _sock_addr; // Struct for creating POSIX socket
     socklen_t _addrlen;
     MultiLog& logger;
     int _client = 0;

@@ -8,7 +8,8 @@
 #include <fstream>      // std::ifstream
 #include <atomic>
 #include <functional>
-
+#include "psrdada_cpp/dada_client_base.hpp"
+#include "psrdada_cpp/double_buffer.hpp"
 #include "psrdada_cpp/multilog.hpp"
 #include "psrdada_cpp/dada_output_stream.hpp"
 #include "psrdada_cpp/effelsberg/paf/capture/Threading.hpp"
@@ -22,15 +23,18 @@ namespace effelsberg{
 namespace paf{
 namespace capture{
 
+boost::mutex lock_buffer;
+DoubleBuffer<std::vector<char>> buffer; // Global double buffer
+
 enum capture_state_t{ERROR_STATE = -1, STARTING, INITIALIZING, IDLE, CAPTURING, STOPPING, EXIT};
 const size_t COMMAND_MSG_LENGTH = 16; // Message length in bytes received by capture control socket
 
 
-class CaptureInterface : public AbstractThread
+class ControlSocket : public AbstractThread
 {
 public:
-    CaptureInterface(MultiLog& log, std::string addr, int port);
-    ~CaptureInterface();
+    ControlSocket(MultiLog& log, std::string addr, int port);
+    ~ControlSocket();
     void init();
     void run();
     void clean();
@@ -49,7 +53,7 @@ template<class HandlerType>
 class CaptureController
 {
 public:
-    CaptureController(HandlerType& handle, capture_conf_t* conf, MultiLog& log);
+    CaptureController(capture_conf_t* conf, MultiLog& log, HandlerType& handle);
     ~CaptureController();
     void start();
 
@@ -58,9 +62,8 @@ public:
     void stop();
     void clean();
     bool stop_thread(AbstractThread* obj);
-    bool buffer_complete();
-    void lock_buffer(bool flag);
-    void buffer_complete(bool flag);
+    bool all_thread_rdy(bool flag);
+    void signal_to_worker(bool flag);
 private:
     std::string state();
 
@@ -71,21 +74,18 @@ private:
 
     std::ifstream input_file;
     std::vector<char> raw_header;
-    std::vector<char> block;
-    std::vector<char> tbuf;
     std::vector<std::vector<std::size_t>*> temp_pos_list;
     std::size_t bytes_written = 0;
     std::size_t total_bytes;
 
-    CaptureMonitor *monitor;
-    CaptureInterface *interface;
+    CaptureMonitor *_monitor;
+    ControlSocket *_ctrl_socket;
     std::vector<Catcher*> catchers;
     boost::thread_group t_grp;
 
 
+    const DadaWriteClient &_dada_client;
     HandlerType& handler;
-    // RawBytes *header;
-    // RawBytes *block;
     MultiLog& logger;
 };
 

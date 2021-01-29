@@ -10,6 +10,13 @@ namespace psrdada_cpp {
         return key;
     }
 
+    std::string key_to_string(key_t const& in)
+    {
+        std::stringstream converter;
+        converter << std::hex << in;
+        return converter.str();
+    }
+
     void set_log_level(std::string level)
     {
         using namespace boost::log;

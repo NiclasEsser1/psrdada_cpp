@@ -4,6 +4,10 @@
 #include <vector>
 #include <cstdlib>
 #include <byteswap.h>
+#include <iostream>     // std::cout
+#include <iomanip>
+#include <sstream>      // std::stringstream
+#include <string>       // std::string
 
 #include "psrdada_cpp/raw_bytes.hpp"
 
@@ -12,68 +16,186 @@ namespace effelsberg{
 namespace paf{
 namespace capture{
 
+
+struct short2{
+    short r;
+    short i;
+};
+
+
 /** UDP Packet related struct **/
-// Currently just support for CODIF
 struct codif_t{
 
-    static const std::size_t size = 7234;
-    static const std::size_t header_size = 64;
-    static const std::size_t payload_size = 7168;
-    static const std::size_t reserved = 2;
+	static const std::size_t size = 7232;
+	static const std::size_t header_size = 64;
+	static const std::size_t payload_size = 7168;
+	static const std::size_t samples = 128;
+	static const std::size_t channels = 7;
+	static const std::size_t pol = 2;
+	static const std::size_t sample_size = 32;
 
-    char* ptr;
-    /** 0 the data frame is not valied, 1 the data frame is valied; **/
-    bool valid;
+	struct codif_hdr_t
+	{
+		uint32_t ref_idf : 32;
+		uint32_t ref_sec : 30;
+		uint32_t iscomplex : 1;
+		uint32_t invalid : 1;
 
-    bool complex;
+		uint32_t stationid : 16;
+		uint32_t unassigned : 6;
+		uint32_t representation : 4;
+		uint32_t ref_epoch : 6;
+		uint32_t samples : 24;	// Frame length (including header) divided by 8
+		uint32_t bits : 5;
+		uint32_t version : 3;
 
-    /** Sample bit size **/
-    int bit_sz;
+		uint32_t beam : 16;
+		uint32_t freq : 16;
+		uint32_t nchan : 16;
+		uint32_t blocklength : 16;
 
-    /** data frame number in one period; **/
-    std::size_t idf;
+		uint32_t reserved2 : 32;
+		uint32_t period : 16;
+		uint32_t reserved1 : 16;
 
-    /** Secs from reference epoch at start of period; **/
-    std::size_t sec;
+		uint64_t totalsamples;
 
-    /** Number of half a year from 1st of January, 2000 for the reference epochch; **/
-    std::size_t epoch_ref;
+		uint32_t reserved3 : 32;
+		uint32_t sync : 32;
 
+		uint32_t extended2 : 32;
+		uint32_t eversion : 8;
+		uint32_t extended1 : 24;
 
-    /** The id of beam, counting from 0; **/
-    int beam;
+		uint64_t extended_userdata : 64;
+	};
 
-    /** Frequency of the first chunnal in each block (integer MHz); **/
-    double freq;
+	typedef codif_hdr_t HeaderType;
 
-    int parse(char* bytes)
+	codif_hdr_t hdr;
+
+	char buffer[codif_t::size];
+	short2 payload[codif_t::payload_size];
+
+	void create(uint32_t seconds, uint32_t frame_idx, uint32_t epoch, uint32_t freq_idx, uint32_t beam_idx)
+	{
+		// Changing values
+		hdr.ref_sec = seconds;
+		hdr.ref_idf = frame_idx;
+		hdr.ref_epoch = epoch;
+		hdr.freq = freq_idx;
+		hdr.beam = beam_idx;
+		// Static values
+		hdr.version = 1;
+		hdr.invalid = 0;
+		hdr.nchan = 7;
+		hdr.samples = 896;
+		hdr.iscomplex = 1;
+		hdr.bits = 16;
+		hdr.representation = 0;
+		hdr.period = 27;
+		hdr.totalsamples = 249999;
+		hdr.blocklength = 6;
+		hdr.sync = 0xADEADBEE;
+	}
+
+	char* serialize()
+	{
+		memcpy((void*)buffer, (void*)&hdr, codif_t::header_size);
+		memcpy((void*)&buffer[codif_t::header_size], (void*)payload, codif_t::payload_size);
+		return buffer;
+	}
+
+	void deserialize(char* buf = nullptr)
+	{
+		uint64_t* header;
+		if(buf != nullptr){
+			header = (uint64_t*)buf;
+		}else{
+			header = (uint64_t*)buffer;
+		}
+		hdr.invalid = header[0] >> 63;
+		hdr.iscomplex = header[0] >> 62;
+		hdr.ref_sec = header[0] >> 32;
+		hdr.ref_idf = header[0] & 0x00000000FFFFFFFF;
+		hdr.version = header[1] >> 61;
+		hdr.bits = (header[1] & 0x1F00000000000000) >> 56;
+		hdr.samples = (header[1] & 0x00FFFFFF00000000) >> 32;
+		hdr.ref_epoch = (header[1] & 0x00000000FC000000) >> 26;
+        hdr.representation = (header[1] & 0x0000000003C00000) >> 22;
+        hdr.unassigned = (header[1] & 0x00000000003F0000) >> 16;
+        hdr.stationid = header[1] & 0x000000000000FFFF;
+        hdr.blocklength = header[2] >> 48;
+        hdr.nchan = (header[2] & 0x0000FFFF00000000) >> 32;
+        hdr.freq = (header[2] & 0x00000000FFFF0000) >> 16;
+        hdr.beam = (header[2] & 0x000000000000FFFF);
+        hdr.reserved1 = header[3] >> 48;
+        hdr.period = (header[3] & 0x0000FFFF00000000) >> 32;
+        hdr.reserved2 = (header[3] & 0x00000000FFFFFFFF);
+        hdr.totalsamples = (header[4] & 0xFFFFFFFFFFFFFFFF);
+        hdr.sync = header[5] >> 32;
+        hdr.reserved3 = (header[5] & 0x00000000FFFFFFFF);
+        hdr.extended2 = (header[6] >> 56);
+        hdr.eversion = (header[6] & 0x0FFFFFFFFFFFFFFF);
+        hdr.extended_userdata = (header[7] & 0xFFFFFFFFFFFFFFFF);
+		// memcpy((void*)&hdr, (void*)&buf, codif_t::header_size);
+		memcpy((void*)payload, (void*)&buf[codif_t::header_size], codif_t::payload_size);
+	}
+
+	void generate_payload()
+	{
+		for(int i = 0; i < (int)codif_t::payload_size/codif_t::sample_size; i++)
+		{
+			payload[i].r = rand()%255+1;
+	    	payload[i].i = rand()%255+1;
+		}
+	}
+
+	bool operator== (const codif_t& val)
+	{
+		if(hdr.ref_idf != val.hdr.ref_idf){return false;}
+		if(hdr.ref_sec != val.hdr.ref_sec){return false;}
+		if(hdr.iscomplex != val.hdr.iscomplex){return false;}
+		if(hdr.invalid != val.hdr.invalid){return false;}
+		if(hdr.stationid != val.hdr.stationid){return false;}
+		if(hdr.unassigned != val.hdr.unassigned){return false;}
+		if(hdr.representation != val.hdr.representation){return false;}
+		if(hdr.ref_epoch != val.hdr.ref_epoch){return false;}
+		if(hdr.samples != val.hdr.samples){return false;}
+		if(hdr.bits != val.hdr.bits){return false;}
+		if(hdr.version != val.hdr.version){return false;}
+		if(hdr.beam != val.hdr.beam){return false;}
+		if(hdr.freq != val.hdr.freq){return false;}
+		if(hdr.nchan != val.hdr.nchan){return false;}
+		if(hdr.blocklength != val.hdr.blocklength){return false;}
+		if(hdr.reserved2 != val.hdr.reserved2){return false;}
+		if(hdr.period != val.hdr.period){return false;}
+		if(hdr.reserved1 != val.hdr.reserved1){return false;}
+		if(hdr.totalsamples != val.hdr.totalsamples){return false;}
+		if(hdr.reserved3 != val.hdr.reserved3){return false;}
+		if(hdr.sync != val.hdr.sync){return false;}
+		if(hdr.extended2 != val.hdr.extended2){return false;}
+		if(hdr.eversion != val.hdr.eversion){return false;}
+		if(hdr.extended1 != val.hdr.extended1){return false;}
+		if(hdr.extended_userdata != val.hdr.extended_userdata){return false;}
+		return true;
+	}
+
+    void print()
     {
-        uint64_t *p, writebuf;
-        p = (uint64_t*)bytes;
-
-        writebuf = bswap_64(*p);
-        idf = (std::size_t)writebuf & 0x00000000ffffffff;
-        sec = (std::size_t)(writebuf & 0x3fffffff00000000) >> 32;
-        valid = (std::size_t)(writebuf & 0x8000000000000000) >> 63;
-
-        writebuf = bswap_64(*(p + 1));
-        epoch_ref = (std::size_t)(writebuf & 0x00000000fc000000) >> 26;
-
-        writebuf = bswap_64(*(p + 2));
-        freq = (double)((writebuf & 0x00000000ffff0000) >> 16);
-        beam = writebuf & 0x000000000000ffff;
-    }
-
-    void init()
-    {
-      valid = 0;
-      idf = 0;
-      sec = 0;
-      epoch_ref = 0;
-      beam = 0;
-      freq = .0;
+        printf("Dataframe propertys (non-static values)\n");
+        printf("Dataframe index: %u\n", hdr.ref_idf);
+        printf("Seconds from ref epoch: %u\n", hdr.ref_sec);
+        printf("Ref epoch: %u\n", hdr.ref_epoch);
+        printf("Frequency: %u\n", hdr.freq);
+        printf("Beam index: %u\n", hdr.beam);
     }
 };
+
+
+
+
+
 
 
 
@@ -82,44 +204,40 @@ struct DataFrame{
     // RawBytes& block;
     // bool operator()(RawBytes &block){};
 
-    char* payload;
-    std::vector<char> packet;
+    Protocol packet;
+	typedef typename Protocol::HeaderType HeaderType;
 
-    Protocol hdr;
+	DataFrame(){
 
-    DataFrame(){
-        packet.resize(Protocol::size);
-        hdr.init();
-        hdr.ptr = &packet[0];
-        payload = &packet[Protocol::header_size];
-    }
+	}
 
-    void update(){
-        hdr.parse(packet.data());
-    }
+	void set_header(HeaderType& header)
+	{
+		packet.hdr = header;
+	}
 
-    void generate(char* header_bytes){
-        hdr.parse(header_bytes);
-        for(std::size_t ii = 0; ii < Protocol::payload_size; ++ii)
-    	{
-    	    payload[ii] = rand()%255+1;
-    	}
-    }
 
-    Protocol* header(){return &hdr;}
+	void set_payload(char* pay)
+	{
+		packet.payload = pay;
+	}
+
+  	void deserialize(char* buf)
+	{
+		packet.deserialize(buf);
+  	}
+
+  	char* serialize()
+	{
+      	return packet.serialize();
+  	}
+
+	HeaderType hdr()
+	{
+		return packet.hdr;
+	}
+
 };
-
-/** psrdada rinbuffer related struct **/
-// struct dada_hdr_t{
-//     std::size_t num_buffer;
-//
-//     std::size_t rbuffer_size;
-//
-//     PsrdadaHeader(/** DADA Client **/)
-//     {
-//
-//     }
-// };
 
 /** Confguration **/
 // template <typename PacketType>
@@ -146,7 +264,7 @@ struct capture_conf_t{
 
     std::size_t sec_ref;
 
-    std::size_t epoch_ref;
+    std::size_t ref_epoch;
 
     std::size_t nbeam;
 
@@ -154,10 +272,11 @@ struct capture_conf_t{
 
     std::vector<std::size_t> capture_cpu_bind;
 
-
     std::size_t frame_size;
 
     std::size_t offset;
+
+    std::size_t n_buffers;
 
     std::size_t rbuffer_hdr_size;
 
@@ -224,3 +343,89 @@ struct capture_conf_t{
 }
 
 #endif
+
+// void deserialize(char* in)
+// {
+//     uint64_t *p, writebuf;
+//     p = (uint64_t*)in;
+//     writebuf = bswap_64(*p);
+//     ref_idf = (std::size_t)writebuf & 0x00000000ffffffff;
+//     hdr.ref_sec = (std::size_t)(writebuf & 0x3fffffff00000000) >> 32;
+//     // valid = (std::size_t)(writebuf & 0x8000000000000000) >> 63;
+//     writebuf = bswap_64(*(p + 1));
+//     ref_epoch = (std::size_t)(writebuf & 0x00000000fc000000) >> 26;
+//     writebuf = bswap_64(*(p + 2));
+//     hdr.freq = (float)((writebuf & 0x00000000ffff0000) >> 16);
+//     hdr.beam = writebuf & 0x000000000000ffff;
+// // }
+//
+//
+// struct codif_hdr_t{
+//     // Word 1
+//     /** 0 the data frame is not valied, 1 the data frame is valied; **/
+//     // bool valid = 0;
+//     //
+//     // bool complex = 0;
+//     /** Secs from reference epoch at start of period; **/
+//     std::size_t ref_sec = 0;
+//     /** data frame number in one period; **/
+//     std::size_t ref_idf = 0;
+//
+//     // Word 2
+//     /** CODIF version **/
+//     // unsigned char version = 0;
+//     /** Sample bit size **/
+//     // int bit_sz = 0;
+//     /** Length of array **/
+//     // int array_length = 0;
+//     /** Number of half a year from 1st of January, 2000 for the reference epochch; **/
+//     std::size_t ref_epoch = 0;
+//     /** reprensentaiton of payload data **/
+//     // int reprensent = 0;
+//     /** Station id of telescope **/
+//     // unsigned char station_id[2]
+//     /** The id of beam, counting from 0; **/
+//     int beam = 0;
+//     /** Frequency of the first chunnal in each block (integer MHz); **/
+//     float freq = 0;
+//
+//     uint64_t words[8];
+//
+//     void deserialize(std::stringstream& is)
+//     {
+//         is >> (uint64_t) word[0];
+//         is >> (uint64_t) word[1];
+//         is >> (uint64_t) word[2];
+//         is >> (uint64_t) word[3];
+//         is >> (uint64_t) word[4];
+//         is >> (uint64_t) word[5];
+//         is >> (uint64_t) word[6];
+//         is >> (uint64_t) word[7];
+//
+//         ref_idf = (std::size_t)bswap_64(word[0]) & 0x00000000ffffffff;
+//         ref_sec = (std::size_t)(bswap_64(word[0]) & 0x3fffffff00000000) >> 32;
+//         // valid = (std::size_t)(writebuf & 0x8000000000000000) >> 63;
+//
+//         ref_epoch = (std::size_t)(bswap_64(word[1]) & 0x00000000fc000000) >> 26;
+//
+//         freq = (float)((bswap_64(word[2]) & 0x00000000ffff0000) >> 16);
+//         beam = bswap_64(word[2]) & 0x000000000000ffff;
+//     }
+//
+//     std::stringstream serialize()
+//     {
+//         std::stringstream os;
+//         os << (uint64_t)((hdr.ref_idf & 0x00000000ffffffff)
+//             & ((hdr.ref_sec & 0x3fffffff00000000) << 32));
+//         os << (uint64_t)(((hdr.ref_epoch & 0x00000000fc000000) << 26) );
+//         os << (uint64_t)((hdr.beam & 0x000000000000ffff)
+//             & ((hdr.freq & 0x00000000ffff0000) << 16));
+//         os << (uint64_t)(0x0000000000000000);
+//         os << (uint64_t)(0x0000000000000000);
+//         os << (uint64_t)(0x0000000000000000);
+//         os << (uint64_t)(0x0000000000000000);
+//         os << (uint64_t)(0x0000000000000000);
+//         return os;
+//     }
+//
+// };
