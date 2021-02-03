@@ -11,6 +11,9 @@ namespace psrdada_cpp {
         ~DoubleBuffer();
         void resize(std::size_t size);
         void swap();
+
+        std::size_t size(){return _size;}
+
         T* a() const;
         T* b() const;
 
@@ -19,6 +22,7 @@ namespace psrdada_cpp {
         T _buf1;
         T* _a_ptr;
         T* _b_ptr;
+        std::size_t _size;
     };
 
 } //namespace psrdada_cpp

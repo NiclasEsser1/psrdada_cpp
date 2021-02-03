@@ -19,6 +19,7 @@ namespace psrdada_cpp {
     template <typename T>
     void DoubleBuffer<T>::resize(std::size_t size)
     {
+        _size = size;
         _buf0.resize(size);
         _buf1.resize(size);
     }

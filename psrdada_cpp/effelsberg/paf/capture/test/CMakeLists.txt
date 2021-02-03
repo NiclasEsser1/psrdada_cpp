@@ -5,7 +5,6 @@ link_directories(${GTEST_LIBRARY_DIR})
 set(gtest_capture_src
     CaptureTester.hpp
     PacketTester.hpp
-    Transmitter.hpp
     src/gtest_capture.cpp
 )
 add_executable(gtest_capture ${gtest_capture_src} )

@@ -25,6 +25,7 @@ void PacketTester::SetUp()
 }
 void PacketTester::TearDown()
 {
+
 }
 void PacketTester::test()
 {
@@ -37,7 +38,6 @@ void PacketTester::test()
     DataFrame<codif_t> df_to_send;
     DataFrame<codif_t> df_to_recv;
 
-    df_to_send.packet.create(seconds, frame_idx, epoch, freq_idx, beam_idx);
     msg = df_to_send.serialize();
     df_to_recv.deserialize(msg);
     compare_header(df_to_send, df_to_recv);

@@ -8,6 +8,8 @@
 #include <fstream>      // std::ifstream
 #include <atomic>
 #include <functional>
+#include <boost/asio.hpp>
+
 #include "psrdada_cpp/dada_client_base.hpp"
 #include "psrdada_cpp/double_buffer.hpp"
 #include "psrdada_cpp/multilog.hpp"
@@ -15,12 +17,11 @@
 #include "psrdada_cpp/cli_utils.hpp"
 
 #include "psrdada_cpp/effelsberg/paf/capture/Threading.hpp"
-#include "psrdada_cpp/effelsberg/paf/capture/Socket.hpp"
 #include "psrdada_cpp/effelsberg/paf/capture/Types.hpp"
 #include "psrdada_cpp/effelsberg/paf/capture/Catcher.hpp"
 #include "psrdada_cpp/effelsberg/paf/capture/CaptureMonitor.hpp"
 #include "psrdada_cpp/effelsberg/paf/capture/CaptureController.hpp"
-#include "psrdada_cpp/effelsberg/paf/capture/test/Transmitter.hpp"
+#include "psrdada_cpp/effelsberg/paf/capture/Transmitter.hpp"
 
 namespace psrdada_cpp {
 namespace effelsberg{

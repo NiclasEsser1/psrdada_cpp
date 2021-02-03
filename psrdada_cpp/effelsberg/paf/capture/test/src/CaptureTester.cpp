@@ -72,12 +72,12 @@ void CaptureTester::test()
 
 	CaptureController<decltype(ostream)> ctrl(&conf, logger, ostream);
 
-	Socket transmit_ctrl(logger, conf.capture_ctrl_addr, conf.capture_ctrl_port, false, SOCK_STREAM);
+	// Socket transmit_ctrl(logger, conf.capture_ctrl_addr, conf.capture_ctrl_port, false, SOCK_STREAM);
 
 	int tid = 0;
     for( auto& port : conf.capture_ports )
     {
-        transmitters.push_back(new Transmitter(conf, logger, port));
+        transmitters.push_back(new Transmitter(logger, conf.capture_addr, port));
         transmitters.back()->id(tid);
         transmitters.back()->init();
 		transmitters.back()->thread( new boost::thread(boost::bind(&AbstractThread::run, transmitters.back())) );
@@ -88,18 +88,18 @@ void CaptureTester::test()
 	boost::thread *ctrl_thread = new boost::thread(boost::bind(&CaptureController<decltype(ostream)>::start, &ctrl));
 	thread_group.add_thread(ctrl_thread);
 	usleep(1000000);
-	transmit_ctrl.open_connection();
-	usleep(1000000);
-	if(transmit_ctrl.transmit("START", 5)){
-		BOOST_LOG_TRIVIAL(info) << "Succesful send START command";
-	}else{
-		BOOST_LOG_TRIVIAL(info) << "Unsuccesful send START command";
-	}
+	// transmit_ctrl.open_connection();
+	// usleep(1000000);
+	// if(transmit_ctrl.transmit("START", 5)){
+	// 	BOOST_LOG_TRIVIAL(info) << "Succesful send START command";
+	// }else{
+	// 	BOOST_LOG_TRIVIAL(info) << "Unsuccesful send START command";
+	// }
 
 	// usleep(1000000);
 	usleep(1000);
 	thread_group.join_all();
-	transmit_ctrl.close_connection();
+	// transmit_ctrl.close_connection();
 	BOOST_LOG_TRIVIAL(info) << "Cleaning all\n";
 }
 

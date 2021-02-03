@@ -16,9 +16,9 @@
 #include <vector>
 
 #include "psrdada_cpp/effelsberg/paf/capture/Types.hpp"
-#include "psrdada_cpp/effelsberg/paf/capture/CaptureController.hpp"
+#include "psrdada_cpp/effelsberg/paf/capture/Receive.hpp"
 
-const std::string program_name = "capture_cli";
+const std::string program_name = "codifrecv";
 const size_t ERROR_IN_COMMAND_LINE = 1;
 const size_t SUCCESS = 0;
 const size_t ERROR_UNHANDLED_EXCEPTION = 2;
@@ -128,10 +128,6 @@ int main(int argc, char** argv)
             ->default_value(0),
             "Threshold value to define lost data packets"
         )
-        ("temp_size,s", po::value<std::size_t>(&conf.nframes_tmp_buffer)
-            ->default_value(128),
-            "Maximum number of dataframe within the temporary buffer"
-        )
         ("reference,r", po::value<std::string>()
             ->default_value("-1:-1")
             ->notifier([&conf](std::string val)
@@ -171,7 +167,7 @@ int main(int argc, char** argv)
             multilog_t* ulogger = logger.native_handle();
             multilog_add(ulogger, fid);
             DadaOutputStream ostream(conf.key, logger);
-            CaptureController<decltype(ostream)> ctrl(&conf, logger, ostream);
+            ReceiveControl<decltype(ostream)> ctrl(conf, logger, ostream);
             ctrl.start();
         }
         catch(po::error& e)
