@@ -1,153 +1,173 @@
-#ifdef VOLTAGE_BEAMFORMER_CUH_
+#ifdef VOLTAGEBEAMFORMER_CUH_
 
 namespace psrdada_cpp{
 namespace cryopaf{
-namespace beamforming{
 
 
-template<class T>
-VoltageBeamformer<T>::VoltageBeamformer(bf_config_t *conf, int device_id)
-	: _conf(conf), _device_id(device_id)
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+VoltageBeamformer<HandlerType, InputType, WeightType, OutputType>::VoltageBeamformer
+	(bf_config_t& conf, MultiLog &log, HandlerType &handler)
+	: _conf(conf), _handler(handler), _log(log)
 {
-	// std::cout << "Creating instance of VoltageBeamformer" << std::endl;
-	// Set device to use
-	CUDA_ERROR_CHECK(cudaSetDevice(_device_id))
-	// Retrieve device properties
-	CUDA_ERROR_CHECK(cudaGetDeviceProperties(&_prop, _device_id))
-	// initialize beamformer enviroment
-	init();
+	CUDA_ERROR_CHECK(cudaGetDeviceProperties(&_prop, _conf.device_id));
 
+	std::vector<int> input_dim{'T','F','A', 'P'};
+	std::vector<int> weight_dim{'B','F','A', 'P'};
+	std::vector<int> output_dim{'B','F','T', 'P'};
+
+	std::unordered_map<int, int64_t> extent;
+
+	extent['T'] = conf.n_samples;
+	extent['F'] = conf.n_channel;
+	extent['A'] = conf.n_antenna;
+	extent['P'] = conf.n_pol;
+	extent['B'] = conf.n_beam;
+
+	_input_buffer = new InputType(input_dim, extent);
+	_weight_buffer = new WeightType(weight_dim, extent);
+	_output_buffer = new OutputType(output_dim, extent);
+
+	CUDA_ERROR_CHECK(cudaStreamCreate(&_stream));
+
+	CUTENSOR_ERROR_CHECK(cutensorInit(&_cutensor_handle));
+
+	_input_buffer->init_desc(&_cutensor_handle);
+	_weight_buffer->init_desc(&_cutensor_handle);
+	_output_buffer->init_desc(&_cutensor_handle);
+	_input_buffer->init_alignment(&_cutensor_handle, _input_buffer->a_ptr());
+	_weight_buffer->init_alignment(&_cutensor_handle, _weight_buffer->a_ptr());
+	_output_buffer->init_alignment(&_cutensor_handle, _output_buffer->a_ptr());
+
+	CUTENSOR_ERROR_CHECK(cutensorInitContractionDescriptor(&_cutensor_handle, &_cutensor_desc,
+			&_input_buffer->desc(), _input_buffer->mode().data(), _input_buffer->alignment(),
+			&_weight_buffer->desc(), _weight_buffer->mode().data(), _weight_buffer->alignment(),
+			&_output_buffer->desc(), _output_buffer->mode().data(), _output_buffer->alignment(),
+			&_output_buffer->desc(), _output_buffer->mode().data(), _output_buffer->alignment(),
+			_cutensor_type));
+	CUTENSOR_ERROR_CHECK(cutensorInitContractionFind(&_cutensor_handle, &_cutensor_find, _cutensor_algo));
+
+	CUTENSOR_ERROR_CHECK(cutensorContractionGetWorkspace(&_cutensor_handle, &_cutensor_desc,
+			&_cutensor_find, _work_preference, &_worksize));
+
+	if(_worksize > 0) {CUDA_ERROR_CHECK(cudaMalloc(&_work, _worksize));}
+	CUTENSOR_ERROR_CHECK(cutensorContractionMaxAlgos(&_max_algos));
+	CUTENSOR_ERROR_CHECK(cutensorInitContractionPlan(&_cutensor_handle, &_cutensor_plan, &_cutensor_desc, &_cutensor_find, _worksize));
 }
 
 
-template<class T>
-VoltageBeamformer<T>::~VoltageBeamformer()
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+VoltageBeamformer<HandlerType, InputType, WeightType, OutputType>::~VoltageBeamformer()
 {
-	// std::cout << "Destroying instance of VoltageBeamformer" << std::endl;
-}
 
-
-
-template<class T>
-void VoltageBeamformer<T>::init(bf_config_t *conf)
-{
-	// If new configuration is passed
-	if(conf){_conf = conf;}
-	// Make kernel layout for GPU-Kernel
-	switch(_conf->bf_type){
-		case SIMPLE_BF_TAFPT:
-			_grid_layout.x = (_conf->n_samples < NTHREAD) ? 1 : _conf->n_samples/NTHREAD;
-			_grid_layout.y = _conf->n_beam;
-			_grid_layout.z = _conf->n_channel;
-			_block_layout.x = NTHREAD; //(_conf->n_samples < NTHREAD) ? _conf->n_samples : NTHREAD;
-			break;
-		case BF_TFAP:
-			// shared_mem_bytes = sizeof(T) * (_conf->n_antenna * _conf->n_pol * (WARPS + 1)); // TODO: This is not true for power /stokes I
-			_shared_mem_static = 0;
-			_shared_mem_dynamic = sizeof(T) * (_conf->n_antenna * _conf->n_pol * (WARPS + 1));
-			_shared_mem_total = _shared_mem_static + _shared_mem_dynamic;
-			check_shared_mem_size();
-			_grid_layout.x = _conf->n_samples * WARP_SIZE / (NTHREAD);
-			_grid_layout.y = _conf->n_beam;
-			_grid_layout.z = _conf->n_channel;
-			_block_layout.x = NTHREAD;
-			break;
-		case CUTENSOR_BF_TFAP:
-		{
-			// std::vector<int> modeA{'F','T','A'};
-		    // std::vector<int> modeB{'B','F','A'};
-		    // std::vector<int> modeC{'B','F','T'};
-			// std::unordered_map<int, int64_t> extent;
-		    // extent['F'] = N_CHANNEL;
-		    // extent['T'] = N_TIMESTAMPS;
-		    // extent['A'] = N_ELEMENTS;
-		    // // extent['P'] = N_POL;
-		    // extent['B'] = N_BEAM;
-			// Tensor<T> input()
-			break;
-		}
-		default:
-			std::cout << "Beamform type not known..." << std::endl;
-			break;
-	}
-}
-
-
-template<class T>
-void VoltageBeamformer<T>::process(
-	const thrust::device_vector<T>& in,
-	thrust::device_vector<T>& out,
-	const thrust::device_vector<T>& weights)
-{
-	if(!_success){return;}
-	// Cast raw data pointer for passing to CUDA kernel
-	const T *p_in = thrust::raw_pointer_cast(in.data());
-	const T *p_weights = thrust::raw_pointer_cast(weights.data());
-	T *p_out = thrust::raw_pointer_cast(out.data());
-	// Switch to desired CUDA kernel
-	switch(_conf->bf_type)
+	if(_stream)
 	{
-		case SIMPLE_BF_TAFPT:
-		{
-			std::cout << "Voltage beamformer: simple TAFP" << std::endl;
-			simple_bf_tafp_voltage<<<_grid_layout, _block_layout>>>(p_in, p_out, p_weights, *_conf);
-			break;
-		}
-		case BF_TFAP:
-		{
-			std::cout << "Voltage beamformer: optimzed TFAP" << std::endl;
-				bf_tfpa_voltage<<<_grid_layout, _block_layout, _shared_mem_dynamic>>>(p_in, p_out, p_weights, *_conf);
-			break;
-		}
-		case CUTENSOR_BF_TFAP:
-		{
-			std::cout << "Voltage beamformer: CUTENSOR TFAP" << std::endl;
-
-			break;
-		}
-		default:
-		{
-			std::cout << "Beamform type " << std::to_string(_conf->bf_type) << " not known.." << std::endl;
-			break;
-		}
+		CUDA_ERROR_CHECK(cudaStreamDestroy(_stream));
 	}
-}
-
-
-
-template<class T>
-void VoltageBeamformer<T>::print_layout()
-{
-	std::cout << " Kernel layout: " << std::endl
-		<< " g.x = " << std::to_string(_grid_layout.x) << std::endl
-		<< " g.y = " << std::to_string(_grid_layout.y) << std::endl
-		<< " g.z = " << std::to_string(_grid_layout.z) << std::endl
-		<< " b.x = " << std::to_string(_block_layout.x)<< std::endl
-		<< " b.y = " << std::to_string(_block_layout.y)<< std::endl
-		<< " b.z = " << std::to_string(_block_layout.z)<< std::endl;
-}
-
-
-template<class T>
-void VoltageBeamformer<T>::check_shared_mem_size()
-{
-	std::cout << "Required shared memory: " << std::to_string(_shared_mem_total) << " Bytes" << std::endl;
-	if(_prop.sharedMemPerBlock < _shared_mem_total)
+	if(_input_buffer)
 	{
-		std::cout << "The requested size for shared memory per block exceeds the size provided by device "
-			<< std::to_string(_device_id) << std::endl
-			<< "! Warning: Kernel will not get launched !" << std::endl;
-			_success = false;
-			return;
-	}else{
-		_success = true;
+		delete _input_buffer;
+	}
+	if(_weight_buffer)
+	{
+		delete _weight_buffer;
+	}
+	if(_output_buffer)
+	{
+		delete _output_buffer;
 	}
 }
 
 
 
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+void VoltageBeamformer<HandlerType, InputType, WeightType, OutputType>::init(RawBytes &header_block)
+{
+		std::size_t bytes = header_block.total_bytes();
+		_handler.init(header_block);
+}
 
-} // namespace beamforming
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+bool VoltageBeamformer<HandlerType, InputType, WeightType, OutputType>::operator()(RawBytes &dada_block)
+{
+	if(dada_block.used_bytes() != _input_buffer->total_bytes())
+	{
+		BOOST_LOG_TRIVIAL(warning) << "Stopped reading from dada stream " << dada_block.used_bytes() << "    " << _input_buffer->total_bytes();
+		CUDA_ERROR_CHECK(cudaDeviceSynchronize());
+		return true;
+	}
+	// _input_buffer->synchronize();
+	_input_buffer->sync_cpy(dada_block.ptr(), dada_block.used_bytes());
+	_input_buffer->swap();
+	process();
+
+	// Wrap in a RawBytes object here;
+	RawBytes dada_output((char*)_output_buffer->a_ptr(), _output_buffer->total_bytes(), _output_buffer->total_bytes(), true);
+	_output_buffer->swap();
+	_handler(dada_output);
+	return false;
+}
+
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+template<class T, class Type>
+void VoltageBeamformer<HandlerType, InputType, WeightType, OutputType>::async_copy(thrust::host_vector<T, thrust::cuda::experimental::pinned_allocator<T>>& vec)
+{
+	if(std::is_same<Type, InputType>::value)
+	{
+		_input_buffer->synchronize();
+		_input_buffer->async_cpy(vec.data(), vec.size()*sizeof(T));
+	}
+	else if(std::is_same<Type, WeightType>::value)
+	{
+		_weight_buffer->synchronize();
+		_weight_buffer->async_cpy(vec.data(), vec.size()*sizeof(T));
+	}
+	else if(std::is_same<Type, OutputType>::value)
+	{
+		_output_buffer->synchronize();
+		_output_buffer->async_cpy(vec.data(), vec.size()*sizeof(T));
+	}
+	else
+	{
+		BOOST_LOG_TRIVIAL(error) << "Type not know";
+	}
+}
+
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+template<class T, class Type>
+void VoltageBeamformer<HandlerType, InputType, WeightType, OutputType>::sync_copy(thrust::host_vector<T>& vec)
+{
+	if(std::is_same<Type, InputType>::value)
+	{
+		_input_buffer->sync_cpy(vec.data(), vec.size()*sizeof(T));
+	}
+	else if(std::is_same<Type, WeightType>::value)
+	{
+		_weight_buffer->sync_cpy(vec.data(), vec.size()*sizeof(T));
+	}
+	else if(std::is_same<Type, OutputType>::value)
+	{
+		_output_buffer->sync_cpy(vec.data(), vec.size()*sizeof(T));
+	}
+	else
+	{
+		BOOST_LOG_TRIVIAL(error) << "Type not known";
+	}
+}
+
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+void VoltageBeamformer<HandlerType, InputType, WeightType, OutputType>::process()
+{
+	float alpha = 1.0;
+	float beta = 0;
+	BOOST_LOG_TRIVIAL(debug) << "Voltage beamformer: CUTENSOR" << std::endl;
+	CUTENSOR_ERROR_CHECK(cutensorContraction(&_cutensor_handle, &_cutensor_plan,
+			(void*)&alpha, (void*)_input_buffer->a_ptr(), (void*)_weight_buffer->a_ptr(),
+			(void*)&beta, (void*)_output_buffer->a_ptr(), (void*)_output_buffer->a_ptr(),
+			_work, _worksize, _stream));
+	CUDA_ERROR_CHECK(cudaDeviceSynchronize());
+}
+
+
 } // namespace cryopaf
 } // namespace psrdada_cpp
 

@@ -37,7 +37,7 @@ namespace psrdada_cpp {
             auto& data_stream = client.data_stream();
             while (!_stop && !handler_stop_request)
             {
-		handler_stop_request = _handler(data_stream.next());
+		            handler_stop_request = _handler(data_stream.next());
                 data_stream.release();
                 if (data_stream.at_end())
                 {

@@ -29,7 +29,14 @@ namespace psrdada_cpp {
     {
         auto& stream = _writer.data_stream();
         auto& out = stream.next();
-        memcpy(out.ptr(),in.ptr(),in.used_bytes());
+        if(in.on_device())
+        {
+            CUDA_ERROR_CHECK(cudaMemcpy(out.ptr(), in.ptr(), in.used_bytes(), cudaMemcpyDeviceToHost));
+        }
+        else
+        {
+          memcpy(out.ptr(),in.ptr(),in.used_bytes());
+        }
         out.used_bytes(in.used_bytes());
         stream.release();
     }

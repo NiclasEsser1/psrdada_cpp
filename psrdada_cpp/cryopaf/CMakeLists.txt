@@ -7,11 +7,10 @@ set(PSRDADA_CPP_CRYOPAF_BEAMFORMING_LIBRARIES
     -lcutensor)
 
 set(psrdada_cpp_cryopaf_beamforming_src
-    TextureMem.cuh
-    DeviceFunc.cuh
-    PowerBeamformer.cuh
+    Types.cuh
+    Unpacker.cuh
     VoltageBeamformer.cuh
-    Tensor.cuh)
+    PowerBeamformer.cuh)
 
 cuda_add_library(${CMAKE_PROJECT_NAME}_cryopaf_beamforming ${psrdada_cpp_cryopaf_beamforming_src})
 
@@ -21,6 +20,5 @@ target_link_libraries(beamforming ${PSRDADA_CPP_CRYOPAF_BEAMFORMING_LIBRARIES})
 install(TARGETS beamforming DESTINATION bin)
 
 add_subdirectory(test)
-add_subdirectory(tools)
 
 endif(ENABLE_CUDA)

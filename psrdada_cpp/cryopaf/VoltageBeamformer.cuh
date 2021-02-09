@@ -5,8 +5,8 @@
  *      Author: niclas
  */
 
-#ifndef VOLTAGE_BEAMFORMER_CUH_
-#define VOLTAGE_BEAMFORMER_CUH_
+#ifndef VOLTAGEBEAMFORMER_CUH_
+#define VOLTAGEBEAMFORMER_CUH_
 
 #include <thrust/device_vector.h>
 #include <thrust/copy.h>
@@ -15,42 +15,19 @@
 #include <cublas_v2.h>
 #include <cuda_fp16.h>
 #include <cuComplex.h>
+#include <unordered_map>
 
-#include "psrdada_cpp/cryopaf/types.cuh"
 #include "psrdada_cpp/cuda_utils.hpp"
-#include "psrdada_cpp/cryopaf/DeviceFunc.cuh"
+#include "psrdada_cpp/multilog.hpp"
+
+#include "psrdada_cpp/cryopaf/Types.cuh"
+// #include "psrdada_cpp/cryopaf/details/VoltageBeamformerKernels.cu"
 
 namespace psrdada_cpp{
 namespace cryopaf{
-namespace beamforming{
 
-
-// NOTE: All function which are declared as __global__ are wrapped/called by the VoltageBeamformer class. Kernel implementation can be found in 'details/VoltageBeamformKernels.cu'
-
-
-/**
-* @brief 	kernel function with a naive approach for voltage based beamforming.
-*
-* @param	idata	raw voltage (format: TFAP)
-* @param	weight	weight for beamforming (format: BFAP)
-* @param	odata	in voltage (format: BFT)
-*/
-template<typename T>__global__
-void simple_bf_tafp_voltage(const T *idata, T *odata, const T *weights, const bf_config_t conf);
-
-
-/**
-* @brief 	kernel function with a more optimized approach for voltage based beamforming.
-*
-* @param	idata	raw voltages (linear 1D; format: TFAP)
-* @param	weight	weight for beamforming (texture 3D; format: B-F-AP)
-* @param	odata	output power / Stokes I (linear 1D; format: BFT)
-*/
-template<typename T>__global__
-void bf_tfpa_voltage(const T *idata, T *odata, const T *weights, const bf_config_t conf);
-
-template <class T>
-class VoltageBeamformer {
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+class VoltageBeamformer{
 public:
 
 
@@ -62,13 +39,13 @@ public:
 	*
 	* @detail	Initializes the enviroment (without allocating memory) for beamcalculation (e.g. device selection, kernel layout, and shared memory checks)
 	*/
-	VoltageBeamformer(bf_config_t *conf, int device_id = 0);
+	VoltageBeamformer(bf_config_t& conf, MultiLog &log, HandlerType &handler);
 
 
 	/**
 	* @brief	Deconstructs a PowerBeamformer object
 	*/
-	virtual ~VoltageBeamformer();
+	~VoltageBeamformer();
 
 
 	/**
@@ -76,40 +53,36 @@ public:
 	*
 	* @param	conf		pointer to configuration object
 	*/
-	void init(bf_config_t *conf = nullptr);
+	void init(RawBytes &header_block);
+
 
 	/**
 	* @brief	Process a batched block of raw voltages. All necessary parameters are provided by bf_conf_t
 	*
-	* @param	in			input data vector with linear alignment. The dataformat of this vector is FTAP
-	* @param	out			output data vector with linear alignment. The dataformat of this vector is BFT
-	* @param	weight		input data vector with a linear alignment. The dataformat of this vector is BFAP
-	*
+	* @param	dada_block			input data vector with linear alignment. The dataformat of this vector is FTAP
 	*/
-	void process(
-		const thrust::device_vector<T>& in,
-		thrust::device_vector<T>& out,
-		const thrust::device_vector<T>& weights);
+	bool operator()(RawBytes &dada_block);
 
-	/**
-	* @brief	Prints the block and grid layout of a kernel (mostly used for debugging purposes)
-	*/
-	void print_layout();
+
+	void process();
+
+	void check_shared_mem();
+
+	template<class T, class Type>
+	void async_copy(thrust::host_vector<T, thrust::cuda::experimental::pinned_allocator<T>>& vec);
+	template<class T, class Type>
+	void sync_copy(thrust::host_vector<T>& vec);
+
+
+
 private:
 
+	HandlerType &_handler;
 
-	/**
-	* @brief 	internal function which checks if the required shared memory size can be provided by an GPU device
-	*/
-	void check_shared_mem_size();
+	InputType *_input_buffer;
+	WeightType *_weight_buffer;
+	OutputType *_output_buffer;
 
-private:
-	int _device_id;
-	bool _success = true;
-	bf_config_t *_conf;	// TODO: non pointer
-
-
-	cudaDeviceProp _prop;
 	std::size_t _shared_mem_static;
 	std::size_t _shared_mem_dynamic;
 	std::size_t _shared_mem_total;
@@ -117,28 +90,30 @@ private:
 	dim3 _grid_layout;
 	dim3 _block_layout;
 
-	cudaStream_t _h2d_stream;
-	cudaStream_t _proc_stream;
-	cudaStream_t _d2h_stream;
+	cudaDeviceProp _prop;
+	cudaStream_t _stream;
 
-	cublasHandle_t blas_handle;
-	cudaDataType blas_dtype;
-	cudaDataType blas_ctype;
+	MultiLog &_log;
+	bf_config_t& _conf;
 
-	// TensorGETT<Tensor<T>, Tensor<T>, Tensor<T>> *gett;
-
+	cutensorHandle_t _cutensor_handle;
+	cutensorContractionDescriptor_t _cutensor_desc;
+	cutensorContractionFind_t _cutensor_find;
+	cutensorContractionPlan_t _cutensor_plan;
+	cutensorComputeType_t _cutensor_type = CUTENSOR_COMPUTE_TF32;
+	cutensorAlgo_t _cutensor_algo = CUTENSOR_ALGO_DEFAULT;
+	cutensorOperator_t _operator = CUTENSOR_OP_IDENTITY;
+	cutensorWorksizePreference_t _work_preference = CUTENSOR_WORKSPACE_RECOMMENDED;
+	uint64_t _worksize = 0;
+	int32_t _max_algos = 0;
+	void* _work = nullptr;
 };
 
 
-template class VoltageBeamformer<__half2>;
-template class VoltageBeamformer<float2>;
-// template class VoltageBeamformer<double2>;
-
-
-} // namespace beamforming
 } // namespace cryopaf
 } // namespace psrdada_cpp
 
-#include "psrdada_cpp/cryopaf/details/VoltageBeamformerKernels.cu"
+#include "psrdada_cpp/cryopaf/details/utils.cu"
 #include "psrdada_cpp/cryopaf/src/VoltageBeamformer.cu"
-#endif /* VOLTAGE_BEAMFORMER_CUH_ */
+
+#endif /* VOLTAGEBEAMFORMER_CUH_ */

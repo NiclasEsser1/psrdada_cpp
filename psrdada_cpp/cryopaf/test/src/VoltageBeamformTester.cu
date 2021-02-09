@@ -2,7 +2,6 @@
 
 namespace psrdada_cpp{
 namespace cryopaf{
-namespace beamforming{
 namespace test{
 
 
@@ -13,29 +12,20 @@ VoltageBeamformTester::VoltageBeamformTester()
   , _conf(GetParam()) // GetParam() is inherited from base TestWithParam
   , _stream(0)
 {
-  // std::cout << "Creating instance of VoltageBeamformTester" << std::endl;
 }
 
 
 VoltageBeamformTester::~VoltageBeamformTester()
 {
-  // std::cout << "Destroying instance of VoltageBeamformTester" << std::endl;
 }
-
 
 void VoltageBeamformTester::SetUp()
 {
-    //CUDA_ERROR_CHECK(cudaStreamCreate(&_stream));
 }
-
-
-
 
 void VoltageBeamformTester::TearDown()
 {
-    //CUDA_ERROR_CHECK(cudaStreamDestroy(_stream));
 }
-
 
 template<typename T>
 void VoltageBeamformTester::test(int device_id)
@@ -58,14 +48,15 @@ void VoltageBeamformTester::test(int device_id)
 	+ weight_size * sizeof(T)
 	+ output_size * sizeof(T);
 
-	std::cout << "Required device memory: " << std::to_string(required_mem / (1024*1024)) << 	"MiB" << std::endl;
-	std::cout << "Required host memory: " << std::to_string((required_mem
-		+ (input_size + weight_size) * sizeof(T)) / (1024*1024)) << "MiB" << std::endl;
+	BOOST_LOG_TRIVIAL(debug) << "Required device memory: " << std::to_string(required_mem / (1024*1024)) << 	"MiB";
+	BOOST_LOG_TRIVIAL(debug) << "Required host memory: " << std::to_string((required_mem
+		+ (input_size + weight_size) * sizeof(T)) / (1024*1024)) << "MiB";
 
 	// Allocate host vectors
-	thrust::host_vector<T> host_output(output_size);
-	thrust::host_vector<T> host_input(input_size, {0, 0});
-	thrust::host_vector<T> host_weights(weight_size, {0, 0});
+  thrust::host_vector<T> host_output(output_size);             // Dataproduct: B-F-T-P
+	thrust::host_vector<T> dev_output(output_size);              // Dataproduct: B-F-T-P
+	thrust::host_vector<T> host_input(input_size, {0, 0});       // Dataprodcut: T-F-A-P
+	thrust::host_vector<T> host_weights(weight_size, {0, 0});    // Dataprodcut: B-F-A-P
 
 	// Generate test samples / normal distributed noise for input signal
 	for (size_t i = 0; i < host_input.size(); i++)
@@ -84,16 +75,10 @@ void VoltageBeamformTester::test(int device_id)
 			host_weights[i] = {normal_dist(generator), normal_dist(generator)};
 	}
 
-	// Allocate device memory & assign test samples
-	thrust::device_vector<T> dev_input = host_input;
-	thrust::device_vector<T> dev_weights = host_weights;
-	thrust::device_vector<T> dev_output(output_size);
-
-	// TODO: print elapsed time
 	// launches cpu beamforming
 	cpu_process(host_input, host_output, host_weights);
 	// launches CUDA kernel
-	gpu_process(dev_input, dev_output, dev_weights);
+	gpu_process(host_input, dev_output, host_weights);
 	// compare results of both outputs
 	compare(host_output, dev_output);
 
@@ -103,81 +88,65 @@ void VoltageBeamformTester::test(int device_id)
 template <typename T>
 void VoltageBeamformTester::compare(
   const thrust::host_vector<T> cpu,
-  const thrust::device_vector<T> gpu,
+  const thrust::host_vector<T> gpu,
   const float tol)
 {
 	// Check if vectors have the same size
 	ASSERT_TRUE(cpu.size() == gpu.size())
 		<< "Host and device vector size not equal" << std::endl;
 
-  	// Copy CUDA results to host
-	thrust::host_vector<T> host_gpu_result = gpu;
-	float abs_diff;
-	int arg_max_deviation = 0;
+	int arg_max = 0;
+  double absolute;
 
-  	// Check each element of CPU and GPU implementation
-	float2 gpu_element;
-	float2 cpu_element;
-	float2 diff;
-	float2 max_deviation = {0,0};
+  T max_deviation = {0,0};
+	T diff;
+
+  // Check each element of CPU and GPU implementation
 	for(std::size_t i = 0; i < gpu.size(); i++)
 	{
-		if constexpr (std::is_same<T, __half2>::value)
-		{
-			gpu_element = __half22float2(host_gpu_result[i]);
-			cpu_element = __half22float2(cpu[i]);
-		}
-		else
-		{
-			gpu_element = host_gpu_result[i];
-			cpu_element = cpu[i];
-		}
+    diff = csub(gpu[i], cpu[i]);
+    absolute = (double)cabs(diff);
 
-    diff = cuCsubf(cpu_element, gpu_element);
-    abs_diff = cuCabsf(diff);
-
-    if(abs_diff > cuCabsf(max_deviation))
-	{
-        arg_max_deviation = i;
+    if(absolute > cabs(max_deviation))
+	  {
+        arg_max = i;
         max_deviation = diff;
     }
-
-		/**/
-    ASSERT_TRUE(abs_diff <= 10)  << "Beamformer: CPU and GPU result is unequal for element " << std::to_string(i) << std::endl
-      << "  CPU result: " << std::to_string(cpu_element.x) << "+ i*" << std::to_string(cpu_element.y) << std::endl
-      << "  GPU result: " << std::to_string(gpu_element.x) << "+ i*" << std::to_string(gpu_element.y) << std::endl;
+    ASSERT_TRUE(absolute <= 1)  << "Beamformer: CPU and GPU result is unequal for element " << std::to_string(i) << std::endl
+      << "  CPU result: " << std::to_string(cpu[i].x) << "+ i*" << std::to_string(cpu[i].y) << std::endl
+      << "  GPU result: " << std::to_string(gpu[i].x) << "+ i*" << std::to_string(gpu[i].y) << std::endl;
   }
 
-  std::cout << "Maximum deviation detected for element " << std::to_string(arg_max_deviation) << std::endl
-    << "Deviation abs(cpu[" << std::to_string(arg_max_deviation)
-    << "] - gpu[" << std::to_string(arg_max_deviation) << "]) = "
-    << std::to_string(max_deviation.x) << " + i* " << std::to_string(max_deviation.y) << std::endl << std::endl;
+  BOOST_LOG_TRIVIAL(debug) << "Maximum deviation detected for element " << std::to_string(arg_max) << std::endl
+    << "Deviation abs(cpu[" << std::to_string(arg_max)
+    << "] - gpu[" << std::to_string(arg_max) << "]) = "
+    << std::to_string(max_deviation.x) << " + i* " << std::to_string(max_deviation.y);
 }
 
 
 template<typename T>
 void VoltageBeamformTester::gpu_process(
-  thrust::device_vector<T>& in,
-  thrust::device_vector<T>& out,
-  thrust::device_vector<T>& weights)
+  thrust::host_vector<T>& in,       // Dataprodcut: T-F-A-P
+  thrust::host_vector<T>& out,      // Dataprodcut: B-F-A-P
+  thrust::host_vector<T>& weights)  // Dataproduct: B-F-T-P
 {
-	VoltageBeamformer<T> bf(&_conf, id);
-	bf.process(in, out, weights);
+  MultiLog log(_conf.logname);
+	VoltageBeamformer<decltype(*this), RawVoltage<T>, Weights<T>, VoltageBeam<T>> beamformer(_conf, log, *this);
+  beamformer.template sync_copy<T, RawVoltage<T>>(in);
+  beamformer.template sync_copy<T, Weights<T>>(weights);
+	beamformer.process();
+  beamformer.template sync_copy<T, VoltageBeam<T>>(out);
 	CUDA_ERROR_CHECK(cudaDeviceSynchronize());
 }
 
 
 template<typename T>
 void VoltageBeamformTester::cpu_process(
-  thrust::host_vector<T>& in,
-  thrust::host_vector<T>& out,
-  thrust::host_vector<T>& weights)
+  thrust::host_vector<T>& in,       // Dataprodcut: T-F-A-P
+  thrust::host_vector<T>& out,      // Dataprodcut: B-F-A-P
+  thrust::host_vector<T>& weights)  // Dataproduct: B-F-T-P
 {
-	int pt = _conf.n_pol;
-	int fpt = _conf.n_channel * pt;
-	int afpt = _conf.n_antenna * fpt;
 	int out_idx, in_idx, weight_idx;
-
 	for(int t = 0; t < _conf.n_samples; t++)
 	{
 		for(int b = 0; b < _conf.n_beam; b++)
@@ -188,38 +157,13 @@ void VoltageBeamformTester::cpu_process(
 				{
 					for(int p = 0; p < _conf.n_pol; p++)
 					{
-						/*
-						* INPUT: TAFP(t)
-						* WEIGHTS: BFAP
-						* OUTPUT: TBF
-						*/
-						if(_conf.bf_type == SIMPLE_BF_TAFPT)
-						{
-							out_idx = b * _conf.n_samples * fpt + t * fpt + f * pt + p;
-							in_idx = t * afpt + a * fpt + f * pt + p;
-							weight_idx = b * afpt + a * fpt + f * pt + p;
-							// out[out_idx] = cuCmulf(in[in_idx], weights[weight_idx]);
-						}
-						/* ! Slightly different output dataproduct !
-						* INPUT: TFAP(t)
-						* WEIGHTS: BFAP
-						* OUTPUT: BFT
-						*/
-						else
-						{
-							out_idx = b * _conf.n_samples * _conf.n_channel * _conf.n_pol
-								+ f * _conf.n_samples * _conf.n_pol + t * _conf.n_pol + p;
-							in_idx = t * _conf.n_channel * _conf.n_antenna * _conf.n_pol
-								+ f * _conf.n_antenna * _conf.n_pol + a * _conf.n_pol + p;
-							weight_idx = b * _conf.n_channel * _conf.n_antenna * _conf.n_pol
-								+ f * _conf.n_antenna * _conf.n_pol + a * _conf.n_pol + p;
-						}
-						if constexpr (std::is_same<T, float2>::value)
-							out[out_idx] = cuCaddf(out[out_idx], cuCmulf(in[in_idx], weights[weight_idx]));
-						else if constexpr (std::is_same<T, __half2>::value)
-							out[out_idx] = __float22half2_rn(cuCaddf(
-								__half22float2(out[out_idx]),
-								cuCmulf(__half22float2(in[in_idx]), __half22float2(weights[weight_idx]))));
+            in_idx = t * _conf.n_channel * _conf.n_antenna * _conf.n_pol
+              + f * _conf.n_antenna * _conf.n_pol + a * _conf.n_pol + p;
+						weight_idx = b * _conf.n_channel * _conf.n_antenna * _conf.n_pol
+							+ f * _conf.n_antenna * _conf.n_pol + a * _conf.n_pol + p;
+						out_idx = b * _conf.n_channel * _conf.n_samples * _conf.n_pol
+							+ f * _conf.n_samples * _conf.n_pol + t * _conf.n_pol + p;
+						out[out_idx] = cmadd(in[in_idx], weights[weight_idx], out[out_idx]);
 					}
 				}
 			}
@@ -232,13 +176,13 @@ void VoltageBeamformTester::cpu_process(
 /**
 * Testing with Google Test Framework
 */
-TEST_P(VoltageBeamformTester, BeamformerVoltageHalf){
-  std::cout << std::endl
-    << "-------------------------------------------------------------" << std::endl
-    << " Testing voltage mode with T=__half2 (half precision 2x16bit)" << std::endl
-    << "-------------------------------------------------------------" << std::endl << std::endl;
-  test<__half2>();
-}
+// TEST_P(VoltageBeamformTester, BeamformerVoltageDouble){
+//   std::cout << std::endl
+//     << "-------------------------------------------------------------" << std::endl
+//     << " Testing voltage mode with T=double2 (half precision 2x64bit)" << std::endl
+//     << "-------------------------------------------------------------" << std::endl << std::endl;
+//   test<double2>();
+// }
 
 TEST_P(VoltageBeamformTester, BeamformerVoltageSingle){
   std::cout << std::endl
@@ -251,19 +195,22 @@ TEST_P(VoltageBeamformTester, BeamformerVoltageSingle){
 
 INSTANTIATE_TEST_CASE_P(BeamformerTesterInstantiation, VoltageBeamformTester, ::testing::Values(
 
-	// samples | channels | antenna | polarisation | beam | interval/integration | beamformer type
-	bf_config_t{32, 1, 16, 2, 1, 0, BF_TFAP},
-	bf_config_t{2048, 1, 16, 2, 4, 0, BF_TFAP},
-	bf_config_t{1024, 64, 32, 2, 32, 0, BF_TFAP},
-	bf_config_t{1024, 64, 32, 1, 64, 0, BF_TFAP},
-	bf_config_t{1024, 64, 64, 2, 32, 0, BF_TFAP},
-	bf_config_t{1024, 64, 64, 2, 32, 0, SIMPLE_BF_TAFPT}
+	// psrdada input key | psrdada output key | device ID | logname | samples | channels | antenna | polarisation | beam | interval/integration | beamformer type
+	bf_config_t{0xdada, 0xdadd, 0, "test.log", 2048, 1, 36, 2, 13, 0, VOLTAGE_BF},
+	bf_config_t{0xdada, 0xdadd, 0, "test.log", 2048, 2, 36, 2, 13, 0, VOLTAGE_BF},
+	bf_config_t{0xdada, 0xdadd, 0, "test.log", 2048, 4, 36, 2, 13, 0, VOLTAGE_BF},
+	bf_config_t{0xdada, 0xdadd, 0, "test.log", 2048, 6, 36, 1, 13, 0, VOLTAGE_BF},
+	bf_config_t{0xdada, 0xdadd, 0, "test.log", 512, 7, 36, 2, 11, 0, VOLTAGE_BF},
+  bf_config_t{0xdada, 0xdadd, 0, "test.log", 2048, 8, 36, 2, 13, 0, VOLTAGE_BF},
+  bf_config_t{0xdada, 0xdadd, 0, "test.log", 2048, 9, 36, 2, 13, 0, VOLTAGE_BF},
+  bf_config_t{0xdada, 0xdadd, 0, "test.log", 2048, 10, 36, 2, 13, 0, VOLTAGE_BF},
+  bf_config_t{0xdada, 0xdadd, 0, "test.log", 128, 16, 36, 2, 13, 0, VOLTAGE_BF},
+	bf_config_t{0xdada, 0xdadd, 0, "test.log", 128, 17, 36, 2, 13, 0, VOLTAGE_BF}
 ));
 
 
 } // namespace psrdada_cpp
 } // namespace cryopaf
-} // namespace beamforming
 } // namespace test
 
 #endif

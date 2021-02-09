@@ -1,183 +1,182 @@
-#ifdef POWER_BEAMFORMER_CUH_
+#ifdef POWERBEAMFORMER_CUH_
 
 namespace psrdada_cpp{
 namespace cryopaf{
-namespace beamforming{
 
 
-
-template<class T, class U>
-PowerBeamformer<T, U>::PowerBeamformer(bf_config_t *conf, int device_id)
-	: _conf(conf), _device_id(device_id)
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+PowerBeamformer<HandlerType, InputType, WeightType, OutputType>::PowerBeamformer
+	(bf_config_t& conf, MultiLog &log, HandlerType &handler)
+	: _conf(conf), _log(log), _handler(handler)
 {
-	// std::cout << "Creating instance of PowerBeamformer" << std::endl;
-	// Set device to use
-	CUDA_ERROR_CHECK(cudaSetDevice(_device_id));
-	// Retrieve device properties
-	CUDA_ERROR_CHECK(cudaGetDeviceProperties(&_prop, _device_id));
-	// initialize beamformer enviroment
-	init();
+	CUDA_ERROR_CHECK(cudaGetDeviceProperties(&_prop, _conf.device_id));
 
-}
+  CUDA_ERROR_CHECK( cudaEventCreate(&start) );
+	CUDA_ERROR_CHECK( cudaEventCreate(&stop) );
+	std::vector<int> input_dim{'T','F','A', 'P'};
+	std::vector<int> weight_dim{'B','F','A', 'P'};
+	std::vector<int> output_dim{'B','F','t'};
 
-template<class T, class U>
-PowerBeamformer<T, U>::~PowerBeamformer()
-{
-	// std::cout << "Destroying instance of PowerBeamformer" << std::endl;
-}
+	std::unordered_map<int, int64_t> extent;
+
+	extent['T'] = conf.n_samples;
+	extent['F'] = conf.n_channel;
+	extent['A'] = conf.n_antenna;
+	extent['P'] = conf.n_pol;
+	extent['B'] = conf.n_beam;
+	extent['t'] = (int)conf.n_samples / conf.interval;
 
 
+	_input_buffer = new InputType(input_dim, extent);
+	_weight_buffer = new WeightType(weight_dim, extent);
+	_output_buffer = new OutputType(output_dim, extent);
 
-template<class T, class U>
-void PowerBeamformer<T, U>::init(bf_config_t *conf)
-{
-	// If new configuration is passed
-	if(conf){_conf = conf;}
-	// Make kernel layout for GPU-Kernel
-	switch(_conf->bf_type){
-		case SIMPLE_BF_TAFPT:
-			_grid_layout.x = (_conf->n_samples < NTHREAD) ? 1 : _conf->n_samples/NTHREAD;
-			_grid_layout.y = _conf->n_beam;
-			_grid_layout.z = _conf->n_channel;
-			_block_layout.x = NTHREAD; //(_conf->n_samples < NTHREAD) ? _conf->n_samples : NTHREAD;
-			break;
-		case BF_TFAP:
-			_shared_mem_static = (SHARED_IDATA + WARPS * WARP_SIZE) * sizeof(T);
-			_shared_mem_dynamic = _conf->n_beam * sizeof(U) + _conf->n_antenna * _conf->n_pol * sizeof(T);
-			// _shared_mem_dynamic = _conf->n_beam * sizeof(U) + NTHREAD * sizeof(T) ;
-			_shared_mem_total = _shared_mem_static + _shared_mem_dynamic;
-			check_shared_mem_size();
-			_grid_layout.x = _conf->n_samples / _conf->interval;
-			_grid_layout.y = _conf->n_channel;
-			_block_layout.x = NTHREAD;
-			break;
-		case BF_TFAP_TEX:
-			_shared_mem_static = SHARED_IDATA * sizeof(T);
-			_shared_mem_dynamic = _conf->n_beam * sizeof(U) + NTHREAD * sizeof(T) + _conf->n_antenna * _conf->n_pol * sizeof(T);
-			_shared_mem_total = _shared_mem_static + _shared_mem_dynamic;
-			check_shared_mem_size();
-			_grid_layout.x = _conf->n_samples / _conf->interval;
-			_grid_layout.y = _conf->n_channel;
-			_block_layout.x = NTHREAD;
-			break;
-		case BF_TFAP_V2:
-			_shared_mem_static = (N_ELEMENTS_CB * (1 + WARPS_CB) + WARPS_CB * WARP_SIZE) * sizeof(T)
-			 	+ (WARPS_CB + WARP_SIZE) * sizeof(U);
-			_shared_mem_dynamic = 0;
-			_shared_mem_total = _shared_mem_static + _shared_mem_dynamic;
-			check_shared_mem_size();
-			_grid_layout.x = _conf->n_beam / WARPS_CB;
-			_grid_layout.y = _conf->n_channel;
-			_block_layout.x = N_THREAD_CB;
-			break;
-		default:
-			std::cout << "Beamform type not known..." << std::endl;
-			break;
-	}
-	// print_layout();
+	_shared_mem_static = (SHARED_IDATA) * sizeof(*_input_buffer->a_ptr());
+	// _shared_mem_dynamic = _conf.n_beam * sizeof(*_output_buffer->a_ptr()) + _conf.n_antenna * _conf.n_pol * sizeof(*_input_buffer->a_ptr());
+	_shared_mem_dynamic = _conf.n_beam * sizeof(*_output_buffer->a_ptr())
+		+ NTHREAD * sizeof(*_input_buffer->a_ptr())
+		+ _conf.n_antenna * _conf.n_pol * sizeof(*_input_buffer->a_ptr());
+	_shared_mem_total = _shared_mem_static + _shared_mem_dynamic;
+
+  check_shared_mem();
+
+	_grid_layout.x = _conf.n_samples / _conf.interval;
+	_grid_layout.y = _conf.n_channel;
+	_block_layout.x = NTHREAD;
+
+	CUDA_ERROR_CHECK(cudaStreamCreate(&_stream));
 }
 
 
-template<class T, class U>
-void PowerBeamformer<T, U>::process(
-	const thrust::device_vector<T>& in,
-	thrust::device_vector<U>& out,
-	const thrust::device_vector<T>& weights,
-	cudaStream_t stream)
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+PowerBeamformer<HandlerType, InputType, WeightType, OutputType>::~PowerBeamformer()
 {
-	if(!_success){return;}
-	// Cast raw data pointer for passing to CUDA kernel
-	const T *p_in = thrust::raw_pointer_cast(in.data());
-	const T *p_weights = thrust::raw_pointer_cast(weights.data());
-	U *p_out = thrust::raw_pointer_cast(out.data());
+	  CUDA_ERROR_CHECK( cudaEventDestroy(start) );
+	  CUDA_ERROR_CHECK( cudaEventDestroy(stop) );
+		if(_stream)
+		{
+			CUDA_ERROR_CHECK(cudaStreamDestroy(_stream));
+		}
 
-	// Switch to desired CUDA kernel
-	switch(_conf->bf_type)
+		if(_input_buffer)
+		{
+			delete _input_buffer;
+		}
+		if(_weight_buffer)
+		{
+			delete _weight_buffer;
+		}
+		if(_output_buffer)
+		{
+			delete _output_buffer;
+		}
+}
+
+
+
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+void PowerBeamformer<HandlerType, InputType, WeightType, OutputType>::init(RawBytes &header_block)
+{
+		std::size_t bytes = header_block.total_bytes();
+		_handler.init(header_block);
+}
+
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+bool PowerBeamformer<HandlerType, InputType, WeightType, OutputType>::operator()(RawBytes &dada_input)
+{
+	if(dada_input.used_bytes() > _input_buffer->total_bytes())
 	{
-		case SIMPLE_BF_TAFPT:
-			std::cout << "Power beamformer (Stokes I): simple TFAPT" << std::endl;
-			simple_bf_tfap_power<<<_grid_layout, _block_layout>>>(p_in, p_out, p_weights, *_conf);
-			break;
-		case BF_TFAP:
-			if constexpr (std::is_same<T, half2>::value)
-			{
-				throw std::runtime_error("Not implemented yet.");
-			}
-			std::cout << "Power beamformer (Stokes I): optimized TFAP" << std::endl;
-			bf_tfap_power<<<_grid_layout, _block_layout, _shared_mem_dynamic>>>(p_in, p_out, p_weights, *_conf);
-			break;
-		case BF_TFAP_TEX:
-			if constexpr (std::is_same<T, half2>::value)
-			{
-				throw std::runtime_error("Not implemented yet.");
-			}
-			std::cout << "Power beamformer (Stokes I): optimized TFAP with texture mem" << std::endl;
-			this->upload_weights(weights);
-			bf_tfap_power<<<_grid_layout, _block_layout, _shared_mem_dynamic>>>(p_in, p_out, texture->getTexture(), *_conf);
-			break;
-		case BF_TFAP_V2:
-			if constexpr (std::is_same<T, float2>::value)
-			{
-				throw std::runtime_error("Not implemented yet.");
-			}
-			std::cout << "Power beamformer (Stokes I): optimized TFAPv2" << std::endl;
-			coherent_bf_power<<<_grid_layout, _block_layout>>>(p_in, p_out, p_weights);
-			break;
-		default:
-			std::cout << "Beamform type " << std::to_string(_conf->bf_type) << " not known..." << std::endl;
-			break;
+		BOOST_LOG_TRIVIAL(error) << "Unexpected Buffer Size - Got "
+       << dada_input.used_bytes() << " byte, expected "
+       << _input_buffer->total_bytes() << " byte)";
+		CUDA_ERROR_CHECK(cudaDeviceSynchronize());
+		return true;
 	}
+	CUDA_ERROR_CHECK( cudaEventRecord(start,0) );
+	_input_buffer->swap();
+	_input_buffer->sync_cpy(dada_input.ptr(), dada_input.used_bytes());
+	process();
+	BOOST_LOG_TRIVIAL(debug) << "Took " << ms << " ms to process stream";
 
+
+	// Wrap in a RawBytes object here;
+	RawBytes dada_output(reinterpret_cast<char*>(_output_buffer->a_ptr()),
+		_output_buffer->total_bytes(),
+		_output_buffer->total_bytes(), true);
+
+	_handler(dada_output);
+  CUDA_ERROR_CHECK(cudaEventRecord(stop, 0));
+  CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
+  CUDA_ERROR_CHECK(cudaEventElapsedTime(&ms, start, stop));
+	return false;
 }
 
-template<class T, class U>
-void PowerBeamformer<T, U>::upload_weights(thrust::device_vector<T> weights)
+
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+void PowerBeamformer<HandlerType, InputType, WeightType, OutputType>::process()
 {
-	texture = new TextureMem<T>(_conf->n_antenna * _conf->n_pol, _conf->n_channel, _conf->n_beam, _device_id);
-	texture->set(weights);
+	bf_tfap_power<<<_grid_layout, _block_layout, _shared_mem_dynamic, _stream>>>
+		(_input_buffer->a_ptr(), _output_buffer->a_ptr(), _weight_buffer->a_ptr(), _conf);
 }
 
-
-template<class T, class U>
-void PowerBeamformer<T, U>::upload_weights(thrust::host_vector<T> weights)
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+template<class T, class Type>
+void PowerBeamformer<HandlerType, InputType, WeightType, OutputType>::async_copy(thrust::host_vector<T, thrust::cuda::experimental::pinned_allocator<T>>& vec)
 {
-	texture = new TextureMem<T>(_conf->n_antenna * _conf->n_pol, _conf->n_channel, _conf->n_beam, _device_id);
-	texture->set(weights);
+	if(std::is_same<Type, InputType>::value)
+	{
+		_input_buffer->async_cpy(thrust::raw_pointer_cast(vec.data()), vec.size()*sizeof(T), _stream);
+		_input_buffer->synchronize();
+	}
+	else if(std::is_same<Type, WeightType>::value)
+	{
+		_weight_buffer->async_cpy(thrust::raw_pointer_cast(vec.data()), vec.size()*sizeof(T), _stream);
+		_weight_buffer->synchronize();
+	}
+	else if(std::is_same<Type, OutputType>::value)
+	{
+		_output_buffer->async_cpy(thrust::raw_pointer_cast(vec.data()), vec.size()*sizeof(T), _stream);
+		_output_buffer->synchronize();
+	}
+	else
+	{
+		BOOST_LOG_TRIVIAL(error) << "Type not known";
+	}
 }
 
-template<class T, class U>
-void PowerBeamformer<T, U>::print_layout()
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+template<class T, class Type>
+void PowerBeamformer<HandlerType, InputType, WeightType, OutputType>::sync_copy(thrust::host_vector<T>& vec)
 {
-	std::cout << " Kernel layout: " << std::endl
-		<< " g.x = " << std::to_string(_grid_layout.x) << std::endl
-		<< " g.y = " << std::to_string(_grid_layout.y) << std::endl
-		<< " g.z = " << std::to_string(_grid_layout.z) << std::endl
-		<< " b.x = " << std::to_string(_block_layout.x)<< std::endl
-		<< " b.y = " << std::to_string(_block_layout.y)<< std::endl
-		<< " b.z = " << std::to_string(_block_layout.z)<< std::endl;
+	if(std::is_same<Type, InputType>::value)
+	{
+		_input_buffer->sync_cpy(vec.data(), vec.size()*sizeof(T));
+	}
+	else if(std::is_same<Type, WeightType>::value)
+	{
+		_weight_buffer->sync_cpy(vec.data(), vec.size()*sizeof(T));
+	}
+	else if(std::is_same<Type, OutputType>::value)
+	{
+		_output_buffer->sync_cpy(vec.data(), vec.size()*sizeof(T));
+	}
+	else
+	{
+		BOOST_LOG_TRIVIAL(error) << "Type not known";
+	}
 }
 
-template<class T, class U>
-void PowerBeamformer<T, U>::check_shared_mem_size()
+template<class HandlerType, class InputType, class WeightType, class OutputType>
+void PowerBeamformer<HandlerType, InputType, WeightType, OutputType>::check_shared_mem()
 {
-	std::cout << "Required shared memory: " << std::to_string(_shared_mem_total) << " Bytes" << std::endl;
+	BOOST_LOG_TRIVIAL(debug) << "Required shared memory: " << std::to_string(_shared_mem_total) << " Bytes";
 	if(_prop.sharedMemPerBlock < _shared_mem_total)
 	{
-		std::cout << "Attempting to increase shared memory per block size..." << std::endl;
-		CUDA_ERROR_CHECK(cudaDeviceSetCacheConfig(cudaFuncCachePreferShared));
-		// if(_prop.sharedMemPerBlock < _shared_mem_total)
-		// {
-		// 	std::cout << "The requested size for shared memory per block exceeds " << std::to_string(_prop.sharedMemPerBlock) << " of device "
-		// 		<< std::to_string(_device_id) << std::endl
-		// 		<< "Warning: Kernel will not get launched !" << std::endl;
-		// 		_success = false;
-		// }
-	}else{
-		_success = true;
+		throw std::runtime_error("Not enough shared memory per block.");
 	}
 }
 
-} // namespace beamforming
+
 } // namespace cryopaf
 } // namespace psrdada_cpp
 

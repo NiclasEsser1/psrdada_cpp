@@ -4,6 +4,7 @@
 #include "psrdada_cpp/dada_write_client.hpp"
 #include "psrdada_cpp/multilog.hpp"
 #include "psrdada_cpp/common.hpp"
+#include "psrdada_cpp/cuda_utils.hpp"
 
 namespace psrdada_cpp
 {

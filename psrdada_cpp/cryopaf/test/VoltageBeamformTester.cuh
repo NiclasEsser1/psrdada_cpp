@@ -11,11 +11,10 @@
 #include <gtest/gtest.h>
 
 #include "psrdada_cpp/cryopaf/VoltageBeamformer.cuh"
-#include "psrdada_cpp/cryopaf/types.cuh"
+#include "psrdada_cpp/cryopaf/Types.cuh"
 
 namespace psrdada_cpp{
 namespace cryopaf{
-namespace beamforming{
 namespace test{
 
 
@@ -59,9 +58,9 @@ public:
   */
   template<typename T>
   void gpu_process(
-    thrust::device_vector<T>& in,
-    thrust::device_vector<T>& out,
-    thrust::device_vector<T>& weights);
+    thrust::host_vector<T>& in,
+    thrust::host_vector<T>& out,
+    thrust::host_vector<T>& weights);
 
 
   /**
@@ -74,7 +73,7 @@ public:
   template <typename T>
   void compare(
     const thrust::host_vector<T> cpu,
-    const thrust::device_vector<T> gpu,
+    const thrust::host_vector<T> gpu,
     const float tol=0.01);
 
 
@@ -90,7 +89,6 @@ private:
 
 } // namespace psrdada_cpp
 } // namespace cryopaf
-} // namespace beamforming
 } // namespace test
 
 #include "psrdada_cpp/cryopaf/test/src/VoltageBeamformTester.cu"

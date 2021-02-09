@@ -11,13 +11,11 @@
 #include <gtest/gtest.h>
 
 #include "psrdada_cpp/cryopaf/PowerBeamformer.cuh"
-#include "psrdada_cpp/cryopaf/types.cuh"
+#include "psrdada_cpp/cryopaf/Types.cuh"
 
 namespace psrdada_cpp{
 namespace cryopaf{
-namespace beamforming{
 namespace test{
-
 
 class PowerBeamformTester : public ::testing::TestWithParam<bf_config_t> {
 public:
@@ -59,9 +57,9 @@ public:
   */
   template<typename T, typename U>
   void gpu_process(
-    thrust::device_vector<T>& in,
-    thrust::device_vector<U>& out,
-    thrust::device_vector<T>& weights);
+    thrust::host_vector<T>& in,
+    thrust::host_vector<U>& out,
+    thrust::host_vector<T>& weights);
 
 
   /**
@@ -74,7 +72,7 @@ public:
   template <typename T>
   void compare(
     const thrust::host_vector<T> cpu,
-    const thrust::device_vector<T> gpu,
+    const thrust::host_vector<T> gpu,
     const float tol=0.01);
 
 
@@ -90,7 +88,6 @@ private:
 
 } // namespace psrdada_cpp
 } // namespace cryopaf
-} // namespace beamforming
 } // namespace test
 
 #include "psrdada_cpp/cryopaf/test/src/PowerBeamformTester.cu"

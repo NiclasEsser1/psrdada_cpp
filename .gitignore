@@ -33,8 +33,7 @@
 
 # Directories
 build/
-psrdada_cpp/cryopaf/tools/beanfarmer
-psrdada_cpp/cryopaf/tools/python/benchmark
+psrdada_cpp/cryopaf/test/profiling
 
 # Editor files
 *~

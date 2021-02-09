@@ -2,7 +2,6 @@
 
 namespace psrdada_cpp{
 namespace cryopaf{
-namespace beamforming{
 
 
 /** Voltage Beamformer **/
@@ -266,7 +265,7 @@ void simple_bf_tafp_voltage(const __half2 *idata, __half2 *odata, const __half2 
 }
 
 
-}
+
 }
 }
 
