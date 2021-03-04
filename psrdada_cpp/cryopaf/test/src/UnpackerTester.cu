@@ -5,10 +5,10 @@ namespace cryopaf {
 namespace test {
 
 UnpackerTester::UnpackerTester()
-    : ::testing::TestWithParam<bf_config_t>()
-    , conf(GetParam())
+    : ::testing::TestWithParam<UnpackerTestConfig>(),
+    conf(GetParam())
 {
-
+  CUDA_ERROR_CHECK(cudaSetDevice(conf.device_id));
 }
 UnpackerTester::~UnpackerTester()
 {
@@ -24,7 +24,7 @@ void UnpackerTester::TearDown()
 template<typename T>
 void UnpackerTester::test()
 {
-    std::size_t n = conf.n_samples * conf.n_channel * conf.n_antenna * conf.n_pol;
+    std::size_t n = conf.n_samples * conf.n_channel * conf.n_elements * conf.n_pol;
     std::default_random_engine generator;
     std::uniform_int_distribution<uint64_t> distribution(0,65535);
 
@@ -56,33 +56,40 @@ void UnpackerTester::cpu_process(
   thrust::host_vector<uint64_t>& input,
   thrust::host_vector<T>& output)
 {
-    BOOST_LOG_TRIVIAL(debug) << "Computing CPU results...";
-    uint64_t tmp;
-    int in_idx, out_idx;
-    for(int t1 = 0; t1 < conf.n_samples/NSAMP_DF; t1++)
+  BOOST_LOG_TRIVIAL(debug) << "Computing CPU results...";
+  uint64_t tmp;
+  int in_idx, out_idx_x, out_idx_y;
+  if(conf.protocol == "codif")
+  {
+    for (int f = 0; f < conf.n_channel; f++)
     {
-      for(int a = 0; a < conf.n_antenna; a++)
+      for(int t1 = 0; t1 < conf.n_samples/NSAMP_DF; t1++)
       {
-        for(int t2 = 0; t2 < NSAMP_DF; t2++)
+        for(int a = 0; a < conf.n_elements; a++)
         {
-          for (int f = 0; f < conf.n_channel; f++)
+          for(int t2 = 0; t2 < NSAMP_DF; t2++)
           {
-              in_idx = t1 * conf.n_antenna * conf.n_channel * NSAMP_DF
+              in_idx = t1 * conf.n_elements * conf.n_channel * NSAMP_DF
                 + a * conf.n_channel * NSAMP_DF
                 + t2 * conf.n_channel
                 + f;
-              out_idx = (NSAMP_DF * t1 + t2) * conf.n_channel * conf.n_antenna * conf.n_pol
-                + f * conf.n_antenna * conf.n_pol
-                + a * conf.n_pol;
+              out_idx_x = f * conf.n_pol * conf.n_samples * conf.n_elements
+                + (NSAMP_DF * t1 + t2) * conf.n_elements
+                + a;
+              out_idx_y = f * conf.n_pol * conf.n_samples * conf.n_elements
+                + conf.n_samples * conf.n_elements
+                + (NSAMP_DF * t1 + t2) * conf.n_elements
+                + a;
               tmp = bswap_64(input[in_idx]);
-              output[out_idx].x = (float)(tmp & 0x000000000000ffffULL);
-              output[out_idx].y = (float)((tmp & 0x00000000ffff0000ULL) >> 16);
-              output[out_idx + 1].x = (float)((tmp & 0x0000ffff00000000ULL) >> 32);
-              output[out_idx + 1].y = (float)((tmp & 0xffff000000000000ULL) >> 48);
+              output[out_idx_x].x = static_cast<decltype(T::x)>(tmp & 0x000000000000ffffULL);
+              output[out_idx_x].y = static_cast<decltype(T::y)>((tmp & 0x00000000ffff0000ULL) >> 16);
+              output[out_idx_y].x = static_cast<decltype(T::x)>((tmp & 0x0000ffff00000000ULL) >> 32);
+              output[out_idx_y].y = static_cast<decltype(T::y)>((tmp & 0xffff000000000000ULL) >> 48);
           }
         }
       }
     }
+  }
 }
 
 template<typename T>
@@ -90,14 +97,23 @@ void UnpackerTester::gpu_process(
   thrust::host_vector<uint64_t>& input,
   thrust::host_vector<T>& output)
 {
-    MultiLog log("unpack-tester");
-    BOOST_LOG_TRIVIAL(debug) << "Computing GPU results...";
-    Unpacker<decltype(*this), RawVoltage<uint64_t>, RawVoltage<T>> unpacker(conf, log, *this);
+    cudaStream_t stream;
+    CUDA_ERROR_CHECK(cudaStreamCreate(&stream));
+    // Copy host 2 device (input)
+    thrust::device_vector<uint64_t> dev_input = input;
+    thrust::device_vector<T> dev_output(output.size());
 
-    unpacker.template sync_copy<uint64_t, RawVoltage<uint64_t>>(input, cudaMemcpyHostToDevice);
-    unpacker.process();
-    unpacker.template sync_copy<T, RawVoltage<T>>(output, cudaMemcpyDeviceToHost);
+    BOOST_LOG_TRIVIAL(debug) << "Computing GPU results...";
+
+    Unpacker<T> unpacker(stream, conf.n_samples, conf.n_channel, conf.n_elements, conf.protocol);
+    unpacker.unpack(
+        (char*)thrust::raw_pointer_cast(dev_input.data()),
+        (T*)thrust::raw_pointer_cast(dev_output.data()));
+
     CUDA_ERROR_CHECK(cudaDeviceSynchronize());
+    CUDA_ERROR_CHECK(cudaStreamDestroy(stream));
+    // Copy device 2 host (output)
+    output = dev_output;
 }
 
 template<typename T>
@@ -107,35 +123,58 @@ void UnpackerTester::compare(
 {
     BOOST_LOG_TRIVIAL(debug) << "Comparing results...";
 
-    ASSERT_TRUE(cpu.size() == gpu.size());
+    float2 gpu_element;
+  	float2 cpu_element;
+
+    ASSERT_TRUE(cpu.size() == gpu.size())
+  		<< "Host and device vector size not equal" << std::endl;
     for (int i = 0; i < cpu.size(); i++)
     {
-      ASSERT_TRUE(cpu[i].x == gpu[i].x && cpu[i].y == gpu[i].y)
-        << "Unpacker: CPU and GPU results are unequal for element " << i << std::endl
-        << "  CPU result: " << cpu[i].x << " + i*" << cpu[i].y << std::endl
-        << "  GPU result: " << gpu[i].x << " + i*" << gpu[i].y << std::endl;
+      if constexpr (std::is_same<T, __half2>::value)
+      {
+        gpu_element = __half22float2(gpu[i]);
+        cpu_element = __half22float2(cpu[i]);
+      }
+			else
+			{
+				gpu_element = gpu[i];
+				cpu_element = cpu[i];
+			}
+      ASSERT_TRUE(cpu_element.x == gpu_element.x && cpu_element.y == gpu_element.y)
+        << "Unpacker: CPU and GPU results are unequal for element " << std::to_string(i) << std::endl
+        << "  CPU result: " << std::to_string(cpu_element.x) << " + i*" << std::to_string(cpu_element.y) << std::endl
+        << "  GPU result: " << std::to_string(gpu_element.x) << " + i*" << std::to_string(gpu_element.y) << std::endl;
     }
 }
 
 /**
 * Testing with Google Test Framework
 */
-TEST_P(UnpackerTester, UnpackerSinglePrecision){
+
+TEST_P(UnpackerTester, UnpackerSinglePrecisionFPTE){
   BOOST_LOG_TRIVIAL(info)
-    << "\n-------------------------------------------------------------" << std::endl
-    << " Testing unpacker with T=float2 (single precision 2x32bit) " << std::endl
-    << "-------------------------------------------------------------\n" << std::endl;
+    << "\n------------------------------------------------------------------------" << std::endl
+    << " Testing unpacker with T=float2 (single precision 2x32bit), Format = FPTE " << std::endl
+    << "------------------------------------------------------------------------\n" << std::endl;
   test<float2>();
 }
 
+TEST_P(UnpackerTester, UnpackerHalfPrecisionFPTE){
+  BOOST_LOG_TRIVIAL(info)
+    << "\n------------------------------------------------------------------------" << std::endl
+    << " Testing unpacker with T=half2 (half precision 2x16bit), Format = FPTE " << std::endl
+    << "------------------------------------------------------------------------\n" << std::endl;
+  test<__half2>();
+}
+
 INSTANTIATE_TEST_CASE_P(UnpackerTesterInstantiation, UnpackerTester, ::testing::Values(
-	// psrdada input key | psrdada output key | device ID | logname | samples | channels | antenna | polarisation | beam | interval/integration | beamformer type
-  bf_config_t{0xdada, 0xdadd, 0, "test.log", 4096, 7, 36, 2, 64, 64, POWER_BF},
-  bf_config_t{0xdada, 0xdadd, 0, "test.log", 128, 14, 2, 2, 64, 64, POWER_BF},
-  bf_config_t{0xdada, 0xdadd, 0, "test.log", 256, 21, 32, 2, 64, 64, POWER_BF},
-  bf_config_t{0xdada, 0xdadd, 0, "test.log", 512, 21, 11, 2, 64, 64, POWER_BF},
-  bf_config_t{0xdada, 0xdadd, 0, "test.log", 1024, 14, 28, 2, 64, 64, POWER_BF},
-	bf_config_t{0xdada, 0xdadd, 0, "test.log", 262144, 7, 17, 2, 256, 64, POWER_BF}
+	// devie id | samples | channels | elements | polarisation | protocol
+  UnpackerTestConfig{0, 4096, 7, 36, 2, "codif"},
+  UnpackerTestConfig{0, 128, 14, 2, 2, "codif"},
+  UnpackerTestConfig{0, 256, 21, 32, 2, "codif"},
+  UnpackerTestConfig{0, 512, 21, 11, 2, "codif"},
+  UnpackerTestConfig{0, 1024, 14, 28, 2, "codif"},
+	UnpackerTestConfig{0, 262144, 7, 17, 2, "codif"}
 ));
 
 } //namespace test

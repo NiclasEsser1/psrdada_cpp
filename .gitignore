@@ -33,7 +33,6 @@
 
 # Directories
 build/
-psrdada_cpp/cryopaf/test/profiling
 
 # Editor files
 *~

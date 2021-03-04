@@ -40,7 +40,7 @@ protected:
 
 } //namespace test
 } //namespace paf
-} //namespace meerkat
+} //namespace effelsberg
 } //namespace psrdada_cpp
 
 #endif //PSRDADA_CPP_EFFELSBERG_PAF_UNPACKERTESTER_CUH

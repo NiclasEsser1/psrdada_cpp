@@ -1,10 +1,12 @@
 #ifndef UNPACKER_CUH
 #define UNPACKER_CUH
 
+#include <cuda.h>
+#include <cuda_fp16.h>
+#include <thrust/device_vector.h>
+
 #include "psrdada_cpp/common.hpp"
 #include "psrdada_cpp/multilog.hpp"
-#include "psrdada_cpp/cryopaf/Types.cuh"
-#include <thrust/device_vector.h>
 
 #define NCHAN_CHK             7
 #define NSAMP_DF              128
@@ -13,38 +15,33 @@
 namespace psrdada_cpp {
 namespace cryopaf {
 
-__global__
-void unpack_codif_to_float32(uint64_t const* __restrict__ idata, float2* __restrict__ odata);
+template<typename T>__global__
+void unpack_codif_to_fpte(uint64_t const* __restrict__ idata, T* __restrict__ odata);
 
-template<class HandlerType, class InputType, class OutputType>
+template<typename T>
 class Unpacker
 {
 public:
 
-    Unpacker(bf_config_t& config, MultiLog &logger, HandlerType &handler);
+    Unpacker(cudaStream_t& stream,
+      std::size_t nsamples,
+      std::size_t nchannels,
+      std::size_t nelements,
+      std::string protocol);
     ~Unpacker();
     Unpacker(Unpacker const&) = delete;
 
-    void init(RawBytes& header_block);
-    bool operator()(RawBytes& dada_block);
-    void process();
-
-    template<class T, class Type>
-    void sync_copy(thrust::host_vector<T>& vec, cudaMemcpyKind kind);
+    void unpack(char* input, T* output);
 
     void print_layout();
 
+    int sample_size(){return _sample_size;}
 private:
-    HandlerType& _handler;
-    MultiLog &log;
-    bf_config_t& conf;
-
-    InputType *_input_buffer;
-    OutputType *_output_buffer;
-
-    cudaStream_t _stream;
-    dim3 _grid_layout;
-    dim3 _block_layout;
+    cudaStream_t& _stream;
+    const int _sample_size = 4; // 2x uint16 in Byte
+    std::string _protocol;
+    dim3 grid;
+    dim3 block;
 };
 
 } //namespace cryopaf

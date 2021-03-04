@@ -81,5 +81,5 @@ TEST_F(UnpackerTester, paf_unpack_test)
 
 } //namespace test
 } //namespace paf
-} //namespace meerkat
+} //namespace effelsberg
 } //namespace psrdada_cpp

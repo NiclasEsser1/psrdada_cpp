@@ -1,23 +1,28 @@
 if(ENABLE_CUDA)
-set(PSRDADA_CPP_CRYOPAF_BEAMFORMING_LIBRARIES
+set(PSRDADA_CPP_CRYOPAF_LIBRARIES
     ${CMAKE_PROJECT_NAME}
-    ${CMAKE_PROJECT_NAME}_cryopaf_beamforming
+    ${CMAKE_PROJECT_NAME}_cryopaf
     ${DEPENDENCY_LIBRARIES}
-    -lcublas
+    -lboost_system
+    -lpthread
     -lcutensor)
 
-set(psrdada_cpp_cryopaf_beamforming_src
-    Types.cuh
+set(psrdada_cpp_cryopaf_src
     Unpacker.cuh
-    VoltageBeamformer.cuh
-    PowerBeamformer.cuh)
+    Beamformer.cuh
+    BufferTypes.cuh
+    Pipeline.cuh
+    PipelineInterface.cuh)
 
-cuda_add_library(${CMAKE_PROJECT_NAME}_cryopaf_beamforming ${psrdada_cpp_cryopaf_beamforming_src})
+cuda_add_library(${CMAKE_PROJECT_NAME}_cryopaf ${psrdada_cpp_cryopaf_src})
 
 cuda_add_executable(beamforming src/beamforming_cli.cu)
-
-target_link_libraries(beamforming ${PSRDADA_CPP_CRYOPAF_BEAMFORMING_LIBRARIES})
+target_link_libraries(beamforming ${PSRDADA_CPP_CRYOPAF_LIBRARIES})
 install(TARGETS beamforming DESTINATION bin)
+
+cuda_add_executable(weightupdater src/weightupdater_cli.cu)
+target_link_libraries(weightupdater ${PSRDADA_CPP_CRYOPAF_LIBRARIES})
+install(TARGETS weightupdater DESTINATION bin)
 
 add_subdirectory(test)
 

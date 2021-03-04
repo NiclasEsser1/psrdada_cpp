@@ -29,14 +29,9 @@ namespace psrdada_cpp {
     {
         auto& stream = _writer.data_stream();
         auto& out = stream.next();
-        if(in.on_device())
-        {
-            CUDA_ERROR_CHECK(cudaMemcpy(out.ptr(), in.ptr(), in.used_bytes(), cudaMemcpyDeviceToHost));
-        }
-        else
-        {
-          memcpy(out.ptr(),in.ptr(),in.used_bytes());
-        }
+        BOOST_LOG_TRIVIAL(debug) << "Copy data block with " << in.used_bytes() << " Bytes to dada buffer ";
+        memcpy(out.ptr(),in.ptr(),in.used_bytes());
+        BOOST_LOG_TRIVIAL(debug) << "Done";
         out.used_bytes(in.used_bytes());
         stream.release();
     }
