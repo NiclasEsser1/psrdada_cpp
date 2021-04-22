@@ -387,7 +387,7 @@ TEST_P(BeamformTester, BeamformerVoltageSingle){
     << "\n-------------------------------------------------------------" << std::endl
     << " Testing voltage mode with T=float2 (single precision 2x32bit) " << std::endl
     << "---------------------------------------------------------------\n" << std::endl;
-  test<float2, float2>(0.1);
+  test<float2, float2>(0.01);
 }
 
 TEST_P(BeamformTester, BeamformerPowerHalf)
@@ -396,7 +396,7 @@ TEST_P(BeamformTester, BeamformerPowerHalf)
     << "-------------------------------------------------------------" << std::endl
     << " Testing power mode with T=__half2 (half precision 2x16bit)  " << std::endl
     << "-------------------------------------------------------------" << std::endl << std::endl;
-  test<__half2, __half>(.1);  // High inaccuarcy due to half to float casting and vice versa between CPU and GPU. We need to accept a high tolerance.
+  test<__half2, __half>(5);  // High inaccuarcy due to half to float casting and vice versa between CPU and GPU. We need to accept a high tolerance.
 }
 
 TEST_P(BeamformTester, BeamformerPowerSingle){
@@ -404,28 +404,24 @@ TEST_P(BeamformTester, BeamformerPowerSingle){
     << "\n-----------------------------------------------------------" << std::endl
     << " Testing power mode with T=float2 (single precision 2x32bit) " << std::endl
     << "-------------------------------------------------------------\n" << std::endl;
-  test<float2, float>(.1);
+  test<float2, float>(0.01);
 }
 
 
 INSTANTIATE_TEST_CASE_P(BeamformerTesterInstantiation, BeamformTester, ::testing::Values(
 
-	// device ID | samples | channels | elements | polarisation | beam | integration/integration
-  BeamformTestConfig{0, 8, 1, 4, 2, 4, 1},
-  BeamformTestConfig{0, 128, 3, 32, 2, 32, 1},
-  BeamformTestConfig{0, 512, 6, 67, 2, 97, 1},
-  BeamformTestConfig{0, 1024, 17, 512, 2, 32, 1},
-  BeamformTestConfig{0, 64, 1, 32, 2, 32, 2},
-  BeamformTestConfig{0, 128, 42, 32, 2, 32, 4},
-  BeamformTestConfig{0, 256, 7, 32, 2, 32, 8},
-  BeamformTestConfig{0, 512, 10, 32, 2, 32, 16},
-  BeamformTestConfig{0, 1024, 1, 32, 2, 32, 32},
-  BeamformTestConfig{0, 2048, 7, 15, 2, 16, 1},
-  BeamformTestConfig{0, 4096, 3, 33, 2, 17, 2},
-  BeamformTestConfig{0, 64, 12, 32, 2, 32, 4},
-  BeamformTestConfig{0, 64, 3, 1024, 2, 1024, 8},
-  BeamformTestConfig{0, 256, 14, 36, 2, 2, 16},
-  BeamformTestConfig{0, 1024, 7, 43, 2, 36, 32}
+	// device ID | samples | channels | elements | beam | integration/integration
+  BeamformTestConfig{0, 8, 1, 4, 4, 1},
+  BeamformTestConfig{0, 128, 3, 32, 32, 1},
+  BeamformTestConfig{0, 512, 6, 67, 97, 1},
+  BeamformTestConfig{0, 1024, 17, 512, 128, 1},
+  BeamformTestConfig{0, 64, 1, 32, 256, 2},
+  BeamformTestConfig{0, 128, 42, 32, 2048, 4},
+  BeamformTestConfig{0, 256, 7, 32, 1024, 8},
+  BeamformTestConfig{0, 512, 10, 32, 777, 16},
+  BeamformTestConfig{0, 1024, 1, 32, 123, 32},
+  BeamformTestConfig{0, 2048, 7, 15, 456, 1},
+  BeamformTestConfig{0, 4096, 3, 33, 277, 2}
 ));
 
 

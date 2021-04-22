@@ -11,12 +11,17 @@
 #define NCHAN_CHK             7
 #define NSAMP_DF              128
 #define NPOL_SAMP             2
+#define NSAMP_PER_HEAP        1024
 
 namespace psrdada_cpp {
 namespace cryopaf {
 
 template<typename T>__global__
 void unpack_codif_to_fpte(uint64_t const* __restrict__ idata, T* __restrict__ odata);
+
+template<typename U, typename T>__global__
+void unpack_spead_ttfep_to_fpte(U const* __restrict__ idata, T* __restrict__ odata);
+
 
 template<typename T>
 class Unpacker
@@ -38,7 +43,7 @@ public:
     int sample_size(){return _sample_size;}
 private:
     cudaStream_t& _stream;
-    const int _sample_size = 4; // 2x uint16 in Byte
+    int _sample_size = 8; // TODO: dynamic for spead and fixed for codif
     std::string _protocol;
     dim3 grid;
     dim3 block;

@@ -18,8 +18,8 @@ struct UnpackerTestConfig{
    std::size_t n_samples;
    std::size_t n_channel;
    std::size_t n_elements;
-   std::size_t n_pol;
    std::string protocol;
+   const std::size_t n_pol = 2;
    void print()
    {
      std::cout << "Test configuration" << std::endl;

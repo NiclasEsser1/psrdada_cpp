@@ -1,4 +1,5 @@
 set(profiling_src
+    KernelStatistics.cuh
     profiling.cu
 )
 cuda_add_executable(profiling ${profiling_src} )

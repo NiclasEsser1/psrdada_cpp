@@ -4,8 +4,7 @@ set(PSRDADA_CPP_CRYOPAF_LIBRARIES
     ${CMAKE_PROJECT_NAME}_cryopaf
     ${DEPENDENCY_LIBRARIES}
     -lboost_system
-    -lpthread
-    -lcutensor)
+    -lpthread)
 
 set(psrdada_cpp_cryopaf_src
     Unpacker.cuh
@@ -24,6 +23,7 @@ cuda_add_executable(weightupdater src/weightupdater_cli.cu)
 target_link_libraries(weightupdater ${PSRDADA_CPP_CRYOPAF_LIBRARIES})
 install(TARGETS weightupdater DESTINATION bin)
 
+add_subdirectory(profiling)
 add_subdirectory(test)
 
 endif(ENABLE_CUDA)

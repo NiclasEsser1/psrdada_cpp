@@ -81,10 +81,20 @@ void UnpackerTester::cpu_process(
                 + (NSAMP_DF * t1 + t2) * conf.n_elements
                 + a;
               tmp = bswap_64(input[in_idx]);
-              output[out_idx_x].x = static_cast<decltype(T::x)>(tmp & 0x000000000000ffffULL);
-              output[out_idx_x].y = static_cast<decltype(T::y)>((tmp & 0x00000000ffff0000ULL) >> 16);
-              output[out_idx_y].x = static_cast<decltype(T::x)>((tmp & 0x0000ffff00000000ULL) >> 32);
-              output[out_idx_y].y = static_cast<decltype(T::y)>((tmp & 0xffff000000000000ULL) >> 48);
+              if constexpr(std::is_same<T, __half2>::value)
+              {
+                output[out_idx_x].x = __float2half(static_cast<float>(tmp & 0x000000000000ffffULL));
+                output[out_idx_x].y = __float2half(static_cast<float>((tmp & 0x00000000ffff0000ULL) >> 16));
+                output[out_idx_y].x = __float2half(static_cast<float>((tmp & 0x0000ffff00000000ULL) >> 32));
+                output[out_idx_y].y = __float2half(static_cast<float>((tmp & 0xffff000000000000ULL) >> 48));
+              }
+              else
+              {
+                output[out_idx_x].x = static_cast<decltype(T::x)>(tmp & 0x000000000000ffffULL);
+                output[out_idx_x].y = static_cast<decltype(T::y)>((tmp & 0x00000000ffff0000ULL) >> 16);
+                output[out_idx_y].x = static_cast<decltype(T::x)>((tmp & 0x0000ffff00000000ULL) >> 32);
+                output[out_idx_y].y = static_cast<decltype(T::y)>((tmp & 0xffff000000000000ULL) >> 48);
+              }
           }
         }
       }
@@ -168,13 +178,18 @@ TEST_P(UnpackerTester, UnpackerHalfPrecisionFPTE){
 }
 
 INSTANTIATE_TEST_CASE_P(UnpackerTesterInstantiation, UnpackerTester, ::testing::Values(
-	// devie id | samples | channels | elements | polarisation | protocol
-  UnpackerTestConfig{0, 4096, 7, 36, 2, "codif"},
-  UnpackerTestConfig{0, 128, 14, 2, 2, "codif"},
-  UnpackerTestConfig{0, 256, 21, 32, 2, "codif"},
-  UnpackerTestConfig{0, 512, 21, 11, 2, "codif"},
-  UnpackerTestConfig{0, 1024, 14, 28, 2, "codif"},
-	UnpackerTestConfig{0, 262144, 7, 17, 2, "codif"}
+	// devie id | samples | channels | elements | protocol
+  UnpackerTestConfig{0, 4096, 7, 36, "codif"},
+  UnpackerTestConfig{0, 128, 14, 2, "codif"},
+  UnpackerTestConfig{0, 256, 21, 32, "codif"},
+  UnpackerTestConfig{0, 512, 21, 11, "codif"},
+  UnpackerTestConfig{0, 1024, 14, 28, "codif"},
+  UnpackerTestConfig{0, 2048, 21, 28, "codif"},
+  UnpackerTestConfig{0, 4096, 14, 128, "codif"},
+  UnpackerTestConfig{0, 1024, 14, 64, "codif"},
+  UnpackerTestConfig{0, 256, 14, 17, "codif"},
+  UnpackerTestConfig{0, 128, 14, 13, "codif"},
+  UnpackerTestConfig{0, 896, 14, 11, "codif"}
 ));
 
 } //namespace test

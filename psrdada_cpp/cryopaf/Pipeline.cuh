@@ -19,6 +19,7 @@
 
 #include "psrdada_cpp/cuda_utils.hpp"
 #include "psrdada_cpp/multilog.hpp"
+#include "psrdada_cpp/raw_bytes.hpp"
 
 #include "psrdada_cpp/cryopaf/Unpacker.cuh"
 #include "psrdada_cpp/cryopaf/Beamformer.cuh"
@@ -35,11 +36,12 @@ struct PipelineConfig{
    std::size_t n_samples;
    std::size_t n_channel;
    std::size_t n_elements;
-   std::size_t n_pol;
    std::size_t n_beam;
    std::size_t integration;
+   std::string input_type;
    std::string mode;
    std::string protocol;
+   const std::size_t n_pol = 2;
    void print()
    {
      std::cout << "Pipeline configuration" << std::endl;
@@ -49,6 +51,7 @@ struct PipelineConfig{
      std::cout << "logname: " << logname << std::endl;
      std::cout << "n_samples: " << n_samples << std::endl;
      std::cout << "n_channel: " << n_channel << std::endl;
+     std::cout << "input_type: " << input_type << std::endl;
      std::cout << "n_elements: " << n_elements << std::endl;
      std::cout << "n_pol: " << n_pol << std::endl;
      std::cout << "n_beam: " << n_beam << std::endl;

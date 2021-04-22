@@ -27,10 +27,10 @@ Pipeline<HandlerType, ComputeType, ResultType>::Pipeline
 
 	// Instantiate processor objects
 	unpacker = new Unpacker<ComputeType>(_prc_stream,
-		conf.n_samples,
-		conf.n_channel,
-		conf.n_elements,
-		conf.protocol);
+		_conf.n_samples,
+		_conf.n_channel,
+		_conf.n_elements,
+		_conf.protocol);
 	beamformer = new Beamformer<ComputeType>(_prc_stream,
 		_conf.n_samples,
 		_conf.n_channel,

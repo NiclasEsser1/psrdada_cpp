@@ -31,6 +31,10 @@
 *.out
 *.app
 
+# Profiling results (cryopaf BF)
+*.csv
+*.png
+
 # Directories
 build/
 

@@ -10,5 +10,3 @@ set(gtest_beamforming_src
 cuda_add_executable(gtest_beamforming ${gtest_beamforming_src} )
 target_link_libraries(gtest_beamforming ${PSRDADA_CPP_CRYOPAF_LIBRARIES})
 add_test(gtest_beamforming gtest_beamforming --test_data "${CMAKE_CURRENT_LIST_DIR}/data")
-
-add_subdirectory(profiling)

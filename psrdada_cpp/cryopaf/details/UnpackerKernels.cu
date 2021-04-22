@@ -46,6 +46,34 @@ void unpack_codif_to_fpte(uint64_t const* __restrict__ idata, T* __restrict__ od
     odata[out_idx_y].y = static_cast<decltype(T::y)>((tmp & 0xffff000000000000LL) >> 48);
 }
 
+template<typename U, typename T>__global__
+void unpack_spead_ttfep_to_fpte(U const* __restrict__ idata, T* __restrict__ odata)
+{
+    int time = threadIdx.x; // Time
+    int elem = blockIdx.y; // Elements
+    int freq = blockIdx.z; // Frequency
+    int heap_idx = blockIdx.x;
+
+    int in_idx = heap_idx * NSAMP_PER_HEAP * gridDim.z * gridDim.y * NPOL_SAMP // Outer time axis
+      + time * gridDim.z * gridDim.y * NPOL_SAMP // Inner time axis
+      + freq * gridDim.y * NPOL_SAMP // Frequency axis
+      + elem * NPOL_SAMP; // Element axis
+
+    int out_idx_x = freq * NPOL_SAMP * gridDim.x * NSAMP_PER_HEAP * gridDim.y // Frequency axis
+      + (time + blockIdx.x * blockDim.x) * gridDim.y
+      + elem;
+    int out_idx_y = freq * NPOL_SAMP * gridDim.x * NSAMP_PER_HEAP * gridDim.y // Frequency axis
+      + gridDim.x * NSAMP_PER_HEAP * gridDim.y
+      + (time + blockIdx.x * blockDim.x) * gridDim.y
+      + elem;
+
+    odata[out_idx_x].x = static_cast<decltype(T::x)>(idata[in_idx].x);
+    odata[out_idx_x].y = static_cast<decltype(T::y)>(idata[in_idx].y);
+
+    odata[out_idx_y].x = static_cast<decltype(T::x)>(idata[in_idx + 1].x);
+    odata[out_idx_y].y = static_cast<decltype(T::y)>(idata[in_idx + 1].y);
+}
+
 // ######################################################
 // NOTE: Kernels above are deprecated and not longer used
 // ######################################################

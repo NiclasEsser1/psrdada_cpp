@@ -2,14 +2,14 @@
 * Beamformer.cuh
 * Author: Niclas Esser <nesser@mpifr-bonn.mpg.de>
 * Description:
-*  This files consists of a single class (Beamformer<ComputeType>). An object of Beamformer
+*  This file consists of a single class (Beamformer<ComputeType>). An object of Beamformer
 *  can be used o either perform a Stokes I detection or raw voltage beamforming
 *  on a GPU.
 *  Both beamforming kernels expect the same dataproduct (linear aligned in device memory)
 *    Input:  F-P-T-E
 *    Weight: F-P-B-E
-*    Output: F-T-B-P (raw voltage)
-*    Output: F-T-B   (Stokes I)
+*    Output: F-T-B-P (voltage beams)
+*    Output: F-T-B   (Stokes I beams)
 */
 
 #ifndef BEAMFORMER_CUH_
@@ -42,7 +42,7 @@ namespace cryopaf{
 * @param	int time	     Width of time dimension (T)
 * @param	int elem       Number of elements (E)
 * @param	int beam       Number of beams (B)
-* @param	int integrate  Integration time, currently limit to 32 and a power of 2
+* @param	int integrate  Integration time, currently limited to 32 and a power of 2
 *
 * @TODO: Allow greater integration time
 */

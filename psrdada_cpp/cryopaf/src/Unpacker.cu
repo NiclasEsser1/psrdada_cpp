@@ -31,6 +31,17 @@ Unpacker<T>::Unpacker(cudaStream_t& stream,
     block.x = NSAMP_DF;
     block.z = NCHAN_CHK;
   }
+  else if(_protocol == "spead")
+  {
+    grid.x = nsamples / NSAMP_PER_HEAP;
+    grid.y = nelements;
+    grid.z = nchannels;
+    block.x = NSAMP_PER_HEAP;
+  }
+  else if(_protocol == "dummy_input")
+  {
+    BOOST_LOG_TRIVIAL(warning) << "UnpackerWarning: Skipping unpacking process";
+  }
   else
   {
     BOOST_LOG_TRIVIAL(error) << "UnpackerError: Protocol " << _protocol << " not implemented";
@@ -42,6 +53,7 @@ Unpacker<T>::Unpacker(cudaStream_t& stream,
 template<typename T>
 Unpacker<T>::~Unpacker()
 {
+  BOOST_LOG_TRIVIAL(debug) << "Destroy Unpacker object";
 }
 
 
@@ -50,7 +62,13 @@ void Unpacker<T>::unpack(char* input, T* output)
 {
   if(_protocol == "codif")
   {
+    BOOST_LOG_TRIVIAL(debug) << "Unpack CODIF data";
     unpack_codif_to_fpte<<< grid, block, 0, _stream>>>((uint64_t*)input, output);
+  }
+  else if(_protocol == "spead")
+  {
+    BOOST_LOG_TRIVIAL(debug) << "Unpack SPEAD2 data";
+    // unpack_spead_to_fpte<<< grid, block, 0, _stream>>>(input, output);
   }
 }
 
